@@ -1,0 +1,198 @@
+---
+title: "Disaster Relief Project: Part I"
+author: "Jordan Hiatt"
+date: "`r format(Sys.Date(), '%b %d, %Y')`"
+output:
+  html_document:
+    number_sections: true    
+    toc: true
+    toc_float: true
+    theme: cosmo
+    highlight: espresso    
+# You can make the format personal - this will get you started:  
+# https://bookdown.org/yihui/rmarkdown/html-document.html#appearance_and_style    
+---
+
+<!--- Below are global settings for knitr. You can override any of them by adding the changes to individual chunks --->
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(error=TRUE,        # Keep compiling upon error
+                      collapse=FALSE,    # collapse by default
+                      echo=TRUE,         # echo code by default
+                      comment = "#>",    # change comment character
+                      fig.width = 5.5,     # set figure width
+                      fig.align = "center",# set figure position
+                      out.width = "49%", # set width of displayed images
+                      warning=TRUE,      # show R warnings
+                      message=TRUE)      # show R messages
+```
+
+<!--- Change font sizes (or other css modifications) --->
+<style>
+h1.title {
+  font-size: 2.2em; /* Title font size */
+}
+h1 {
+  font-size: 2em;   /* Header 1 font size */
+}
+h2 {
+  font-size: 1.5em;
+}
+h3 { 
+  font-size: 1.2em;
+}
+pre {
+  font-size: 0.8em;  /* Code and R output font size */
+}
+</style>
+
+
+
+**SYS 6018 | Spring 2021 | University of Virginia **
+
+*******************************************
+
+# Introduction 
+
+Tell the reader what this project is about. Motivation. 
+
+# Training Data / EDA
+
+Load data, explore data, etc. 
+
+```{r load-packages, warning=FALSE, message=FALSE}
+# Load Required Packages
+library(tidyverse)
+```
+
+# Model Training
+
+## Set-up 
+
+```{r load-data}
+# load in csv
+data <- read.csv('HaitiPixels.csv',colClasses=c("factor",rep("numeric",3))) # for help with colClasses and rep() https://stackoverflow.com/questions/2805357/specifying-colclasses-in-the-read-csv
+
+# gather general csv data
+data %>% dim()
+data %>% filter(is.na(data))
+# classes
+data$Class %>% contrasts()
+data %>% filter(Class=='Blue Tarp') %>% dim()
+data %>% filter(Class=='Rooftop') %>% dim()
+data %>% filter(Class=='Soil') %>% dim()
+data %>% filter(Class=='Various Non-Tarp') %>% dim()
+data %>% filter(Class=='Vegetation') %>% dim()
+
+# Combine classes
+data <- data %>% mutate(Class.cl = ifelse(Class=='Blue Tarp','Blue Tarp','Other'))
+data$Class.cl <- data$Class.cl %>% as_factor()
+data$Class.cl %>% contrasts()
+
+# set up 10-fold cross-validation
+set.seed(42)
+kfold <- data %>% crossv_kfold(k = 10) #https://modelr.tidyverse.org/reference/crossv_mc.html
+```
+
+
+## Logistic Regression
+
+```{r logistic-regression}
+# create a loop for each fold cv and several different thresholds?? Use ROC curve to identify threshold (USE PRECISION FOR ROC)
+res.logisitic <- tibble(specificity=numeric(),sensitivity=numeric(),precision=numeric()) # what do I need for the roc cuve, etc
+
+
+split_model <-function(split){
+  data.split <- analysis(split)
+  glm.fit <- data.split %>% glm(Class.cl~., family=binomial) # create the model
+  #res.logisitic <- add_row()
+}
+
+kfold$splits %>% purrr::map(split_model) 
+
+models.logist 
+
+
+
+
+
+
+
+#https://stackoverflow.com/questions/33470373/applying-k-fold-cross-validation-model-using-caret-package
+#https://stackoverflow.com/questions/41742777/using-poly-function-within-training-model-in-caret-package-resulting-in-datafra
+# kfolds_lm.fit <- function(p, data, kfolds) {
+#   mod_form <- paste0("mpg~poly(horsepower,",p,")")        
+#   caret::train(as.formula(mod_form), data=data, trControl=kfolds, method="lm")
+# }
+# train_control <- caret::trainControl(method="cv", number=10, 
+#                                      savePredictions=TRUE)
+# models <- purrr::set_names(as.character(1:10)) %>% 
+#   purrr::map(kfolds_lm.fit, Auto, train_control)
+# models
+
+
+```
+
+## LDA
+
+## QDA
+
+## KNN
+
+### Tuning Parameter $k$
+
+How were tuning parameter(s) selected? What value is used? Plots/Tables/etc.
+
+## Penalized Logistic Regression (ElasticNet)
+
+### Tuning Parameters
+
+**NOTE: PART II same as above plus add Random Forest and SVM to Model Training.**
+
+## Threshold Selection
+
+
+# Results (Cross-Validation)
+
+** CV Performance Table Here**
+
+
+# Conclusions
+
+### Conclusion \#1 
+
+### Conclusion \#2
+
+### Conclusion \#3
+
+
+```{r, echo=FALSE}
+# knitr::knit_exit()    # ignore everything after this
+## Uncomment this line for Part I
+## You can remove the entire code chunk for Part II
+```
+
+
+# Hold-out Data / EDA
+
+Load data, explore data, etc. 
+
+
+# Results (Hold-Out)
+
+**Hold-Out Performance Table Here**
+
+
+# Final Conclusions
+
+### Conclusion \#1 
+
+### Conclusion \#2
+
+### Conclusion \#3
+
+### Conclusion \#4 
+
+### Conclusion \#5
+
+### Conclusion \#6
