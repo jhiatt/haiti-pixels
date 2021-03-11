@@ -102,15 +102,18 @@ kfold <- data %>% crossv_kfold(k = 10) #https://modelr.tidyverse.org/reference/c
 res.logisitic <- tibble(specificity=numeric(),sensitivity=numeric(),precision=numeric()) # what do I need for the roc cuve, etc
 
 
-split_model <-function(split){
-  data.split <- analysis(split)
-  glm.fit <- data.split %>% glm(Class.cl~., family=binomial) # create the model
-  #res.logisitic <- add_row()
+
+data.df <- as.data.frame(unclass(data)) #https://stackoverflow.com/questions/43018879/wrong-model-type-for-classification-in-regression-problems-in-r-caret
+
+kfold_model <-function(data, f, method){
+  ctrl <- caret::trainControl(method='cv', number=10, savePredictions = 'all')
+  caret::train(as.formula(f), data=data, method=method, trControl=ctrl)
 }
 
-kfold$splits %>% purrr::map(split_model) 
+# kfold$splits %>% purrr::map(split_model) 
 
-models.logist 
+
+models.logist <- kfold_model(data.df, 'Class.cl~.', 'lm')
 
 
 
