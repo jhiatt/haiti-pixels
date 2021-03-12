@@ -89,49 +89,101 @@ data <- data %>% mutate(Class.cl = ifelse(Class=='Blue Tarp','Blue Tarp','Other'
 data$Class.cl <- data$Class.cl %>% as_factor()
 data$Class.cl %>% contrasts()
 
-# set up 10-fold cross-validation
+
+## set up 10-fold cross-validation
 set.seed(42)
-kfold <- data %>% crossv_kfold(k = 10) #https://modelr.tidyverse.org/reference/crossv_mc.html
+# First we get the number of items in each fold, then we get an index number cutt off for each fold if we were to number observations 1 to n
+foldcount <- floor(dim(data)[1]/10) # this should give us the correct number of observations in each fold
+# we need to make sure there is no top end or the last observation would be missed due to rounding, so we stop at 9
+cuttoff_list <- list()
+for(i in 1:9){
+  cuttoff_list <- cuttoff_list %>% append(foldcount*i)
+}
+
+# create function for assigning folds
+# really slow needs to be updated
+assign_fold <- function(id) {
+  if (id<cuttoff_list[1]) {
+    return('fold01')
+  } else if (id<cuttoff_list[2]) {
+    return('fold02')
+  } else if (id<cuttoff_list[3]) {
+    return('fold03')
+  } else if (id<cuttoff_list[4]) {
+    return('fold04')
+  } else if (id<cuttoff_list[5]) {
+    return('fold05')
+  } else if (id<cuttoff_list[6]) {
+    return('fold06')
+  } else if (id<cuttoff_list[7]) {
+    return('fold07')
+  } else if (id<cuttoff_list[8]) {
+    return('fold08')
+  } else if (id<cuttoff_list[9]) {
+    return('fold09')
+  } else {
+    return('fold10')
+  }
+}
+
+data.kfold <- data %>% mutate(random_id = sample(1:dim(data)[1], size = dim(data)[1], replace = FALSE), fold = 'fold10') # sample without replacement: https://stackoverflow.com/questions/14864275/randomize-w-no-repeats-using-r
+
+for(i in 1:dim(data.kfold)[1]){
+  data.kfold[i,]$fold = assign_fold(data.kfold[i,]$random_id)
+}
+
+# for(i in 1:length(cuttoff_list)){
+#   f <- paste0('fold0',i)
+#   data.kfold <- data.kfold %>% purrr::map(if(random_id<cuttoff_list[[i]]){fold = f})
+# }
+#data.kfold <- data.kfold %>% mutate(fold = )
+#kfold <- data %>% vfold_cv(v = 10, repeats = 1) # https://rsample.tidymodels.org/reference/vfold_cv.html
+```
+```{r}
+data.kfold %>% filter(fold=='fold01') %>% dim()
+data.kfold %>% filter(fold=='fold02') %>% dim()
+data.kfold %>% filter(fold=='fold03') %>% dim()
+data.kfold %>% filter(fold=='fold04') %>% dim()
+data.kfold %>% filter(fold=='fold05') %>% dim()
+data.kfold %>% filter(fold=='fold06') %>% dim()
+data.kfold %>% filter(fold=='fold07') %>% dim()
+data.kfold %>% filter(fold=='fold08') %>% dim()
+data.kfold %>% filter(fold=='fold09') %>% dim()
+data.kfold %>% filter(fold=='fold010') %>% dim()
 ```
 
+It looks like these folds are evenly split
 
 ## Logistic Regression
 
 ```{r logistic-regression}
 # create a loop for each fold cv and several different thresholds?? Use ROC curve to identify threshold (USE PRECISION FOR ROC)
-res.logisitic <- tibble(specificity=numeric(),sensitivity=numeric(),precision=numeric()) # what do I need for the roc cuve, etc
+#res.logisitic <- tibble(specificity=numeric(),sensitivity=numeric(),precision=numeric()) # what do I need for the roc cuve, etc  REMOVE????
 
+#goal, get predictions
 
-
-data.df <- as.data.frame(unclass(data)) #https://stackoverflow.com/questions/43018879/wrong-model-type-for-classification-in-regression-problems-in-r-caret
-
-kfold_model <-function(data, f, method){
-  ctrl <- caret::trainControl(method='cv', number=10, savePredictions = 'all')
-  caret::train(as.formula(f), data=data, method=method, trControl=ctrl)
+# loop through k folds
+cross_val <- function(kfold) {
+  kfold$splits %>% map_dbl(function(x) {
+    
+  })
 }
+scrap<-as.data.frame(kfold[1,])
 
 # kfold$splits %>% purrr::map(split_model) 
 
 
-models.logist <- kfold_model(data.df, 'Class.cl~.', 'lm')
+models.logist <- kfold_model(data.df, 'Class.cl~Red+Green+Blue', 'lm')
 
 
 
+# sci kit learn, tidymodels (new version of caret) (yardstick for confusion matrix)
+# Output of the loop:
+#   training models
+#   predictions
+#   output - data frame with predictions (in terms of probabilities), actuals, name of iteration
 
 
-
-
-#https://stackoverflow.com/questions/33470373/applying-k-fold-cross-validation-model-using-caret-package
-#https://stackoverflow.com/questions/41742777/using-poly-function-within-training-model-in-caret-package-resulting-in-datafra
-# kfolds_lm.fit <- function(p, data, kfolds) {
-#   mod_form <- paste0("mpg~poly(horsepower,",p,")")        
-#   caret::train(as.formula(mod_form), data=data, trControl=kfolds, method="lm")
-# }
-# train_control <- caret::trainControl(method="cv", number=10, 
-#                                      savePredictions=TRUE)
-# models <- purrr::set_names(as.character(1:10)) %>% 
-#   purrr::map(kfolds_lm.fit, Auto, train_control)
-# models
 
 
 ```
