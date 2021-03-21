@@ -64,13 +64,17 @@ Load data, explore data, etc.
 # Load Required Packages
 library(tidyverse)
 library(broom)
+library(caret)
+library(MASS)
 ```
 
 # Model Training
 
 ## Set-up 
 
-```{r load-data}
+First, I loaded the data and did some digging on the different classes. A huge majority of our observations are not classified as Blue Tarps. We are not intersted in further defining the non-tarp data at this point so I grouped the non-tarp data into one class and saved it to another column to maintain the integrity of the original data, in case it is useful down the road.
+
+```{r load-data, cache=TRUE}
 # load in csv
 data <- read.csv('HaitiPixels.csv',colClasses=c("factor",rep("numeric",3))) # for help with colClasses and rep() https://stackoverflow.com/questions/2805357/specifying-colclasses-in-the-read-csv
 
@@ -89,12 +93,52 @@ data %>% filter(Class=='Vegetation') %>% dim()
 data <- data %>% mutate(Class.cl = ifelse(Class=='Blue Tarp','Blue Tarp','Other'))
 data$Class.cl <- data$Class.cl %>% as_factor()
 data$Class.cl %>% contrasts()
+```
 
+Next, I split out a subset of the data to use to test the finalized, cross validated data. Such a small portion of our data is blue tarp data that I am concerned we might not have enough blue tarp data for our test set. I did some calculations and found that only 0.03% of our data is blue tarp data. When deciding how much our holdout should be, my key priority is having enough blue tarp data to confirm that the testing works. I will start with 500 and then if there is time and processing capacity I can try a smaller amount to give more data for training. I am aware that there are other ways of allocating data to ensure you have important data in each set but I am wary of taking away too many blue tarps from training data or creating overfitting by including points in both.
 
+After splitting out train and test data sets, I checked to make sure data was not lost and appeared to have the same balance on the whole.
+
+```{r holdout}
+## split into train and holdout
+# what % of data is classified as blue tarp?
+bt <- data %>% filter(Class.cl=='Blue Tarp') %>% dim()
+ot <- data %>% filter(Class.cl!='Blue Tarp') %>% dim()
+bt[1]/ot[1] # 3.3%
+
+# to get 500 blue tarps in our holdout set, how much data should we hold out?
+500/.033 #15,151 about a quarter of our data
+# what about 250?
+250/.033
+# we can start by holding out 1 quarter of the data and then see if our resluts are strong enough.
+
+# holdout a quarter of our data
+set.seed(42)
+holdout_index <- sample(1:dim(data)[1], size = (dim(data)[1])/4, replace = FALSE)
+data.test <- data[holdout_index,]
+ts <- data.test %>% dim() #15810
+
+`%notin%` <- Negate(`%in%`) #https://www.r-bloggers.com/2018/07/the-notin-operator/
+data.train <- data %>% rowid_to_column() %>% filter(rowid %notin% holdout_index)
+tr <- data.train %>% dim() #47431
+
+ts[1]+tr[1]
+
+ts.bl <- data.test %>% filter(Class.cl == "Blue Tarp") %>% dim()
+ts.bl
+tr.bl <- data.train %>% filter(Class.cl == "Blue Tarp") %>%  dim()
+tr.bl
+ts.bl + tr.bl
+data %>% filter(Class.cl == "Blue Tarp") %>% dim()
+```
+
+I decided to create my own 10-fold split so I would more easily have access to any data that I wanted. Currently, this loop isn't very efficient so there is probably a better way, but the upside is it only has to run once and I should be able to use this on most of my models. Because we are dealing with three variables that represent different aspects of the color spectrum, I feel that this data is already pretty uniform, so I decided against any kind of scaling or parameter selection.
+
+```{r 10-fold, cache=TRUE}
 ## set up 10-fold cross-validation
 set.seed(42)
 # First we get the number of items in each fold, then we get an index number cutt off for each fold if we were to number observations 1 to n
-foldcount <- floor(dim(data)[1]/10) # this should give us the correct number of observations in each fold
+foldcount <- floor(dim(data.train)[1]/10) # this should give us the correct number of observations in each fold
 # we need to make sure there is no top end or the last observation would be missed due to rounding, so we stop at 9
 cuttoff_list <- list()
 for(i in 1:9){
@@ -106,28 +150,28 @@ for(i in 1:9){
 assign_fold <- function(id) {
   if (id<cuttoff_list[1]) {
     return(1)
-  } else if (id<cuttoff_list[2]) {
+  } else if (id<=cuttoff_list[2]) {
     return(2)
-  } else if (id<cuttoff_list[3]) {
+  } else if (id<=cuttoff_list[3]) {
     return(3)
-  } else if (id<cuttoff_list[4]) {
+  } else if (id<=cuttoff_list[4]) {
     return(4)
-  } else if (id<cuttoff_list[5]) {
+  } else if (id<=cuttoff_list[5]) {
     return(5)
-  } else if (id<cuttoff_list[6]) {
+  } else if (id<=cuttoff_list[6]) {
     return(6)
-  } else if (id<cuttoff_list[7]) {
+  } else if (id<=cuttoff_list[7]) {
     return(7)
-  } else if (id<cuttoff_list[8]) {
+  } else if (id<=cuttoff_list[8]) {
     return(8)
-  } else if (id<cuttoff_list[9]) {
+  } else if (id<=cuttoff_list[9]) {
     return(9)
   } else {
     return(10)
   }
 }
 
-data.kfold <- data %>% mutate(random_id = sample(1:dim(data)[1], size = dim(data)[1], replace = FALSE), fold = 10) # sample without replacement: https://stackoverflow.com/questions/14864275/randomize-w-no-repeats-using-r
+data.kfold <- data.train %>% mutate(random_id = sample(1:dim(data.train)[1], size = dim(data.train)[1], replace = FALSE), fold = 10) # sample without replacement: https://stackoverflow.com/questions/14864275/randomize-w-no-repeats-using-r
 
 for(i in 1:dim(data.kfold)[1]){
   data.kfold[i,]$fold = assign_fold(data.kfold[i,]$random_id)
@@ -140,6 +184,7 @@ for(i in 1:dim(data.kfold)[1]){
 #data.kfold <- data.kfold %>% mutate(fold = )
 #kfold <- data %>% vfold_cv(v = 10, repeats = 1) # https://rsample.tidymodels.org/reference/vfold_cv.html
 ```
+
 ```{r}
 data.kfold %>% filter(fold==1) %>% dim()
 data.kfold %>% filter(fold==2) %>% dim()
@@ -157,13 +202,9 @@ It looks like these folds are evenly split
 
 ## Logistic Regression
 
-```{r logistic-regression}
-# create a loop for each fold cv and several different thresholds?? Use ROC curve to identify threshold (USE PRECISION FOR ROC)
-#res.logisitic <- tibble(tuning=character(),actual=factor(),prediction=numeric()) # what do I need for the roc cuve, etc  REMOVE????
-
-#goal, get predictions
-
+```{r logistic-regression, cache=TRUE}
 # loop through k folds
+#PREDICT ON ACTUAL DATA!!!!!!!!!!!! (SWITCH TO CARET????)  or do you predict on training data here to get the best model and then switch to test for the ROC curve?
 cross_val <- function(kfold) {
   logistic.fit <- glm(Class.cl~Red+Green+Blue,family = binomial, data = data.kfold, subset=fold!=kfold)
   #logistic.fit %>% augment(newdata=filter(data.kfold$fold == kfold))
@@ -176,15 +217,38 @@ cross_val <- function(kfold) {
 logistic.pred <- data_frame(fold=numeric(),actual=factor(),prediction=numeric())
 for (i in 1:10) {
   logistic.pred<-full_join(logistic.pred, cross_val(i))
-  
 }
 
-# kfold$splits %>% purrr::map(split_model) 
 
 
-# models.logist <- kfold_model(data.df, 'Class.cl~Red+Green+Blue', 'lm')
+# Next steps
+# 1. Set tuning parameters (scaling, feature engineering, exponents, prediction threshold, k, lambda/alpha, check AIC/BIC or just test results, ridge? (probably not lasso), )
+# 2. ROC curve (do this first?)
 
+# library(pROC)
+# logistic.roc <- roc(logistic.pred$actual,logistic.pred$prediction)
+# logistic.roc
+# par(pty='s')
+# logistic.roc %>% plot()
 
+library(tidymodels)
+# https://yardstick.tidymodels.org/reference/roc_curve.html
+logistic.roc <- data.test.log %>% roc_curve(actual,prediction)
+logistic.roc
+logistic.auc <- data.test.log %>% roc_auc(actual,prediction)
+logistic.auc
+
+data.test.log <- data.test %>% mutate(prediction = knn.pred[,1])
+
+logistic.roc %>% ggplot(aes(x = 1 - specificity, y = sensitivity)) +
+  geom_path() + geom_abline(lty=3) + coord_equal()
+
+logistic.pr <- logistic.pred %>% pr_curve(actual,prediction)
+logistic.pr_auc <- logistic.pred %>% pr_auc(actual,prediction)
+logistic.pr_auc
+
+logistic.pr %>% ggplot(aes(x = recall, y = precision)) +
+  geom_path() + coord_equal()
 
 # sci kit learn, tidymodels (new version of caret) (yardstick for confusion matrix)
 # Output of the loop:
@@ -198,16 +262,93 @@ for (i in 1:10) {
 ```
 
 ## LDA
+```{r}
+# 50% chance of guessing??? Why does my table have so many columns???
+lda.cross_val <- function(kfold) {
+  lda.fit <- lda(Class.cl~Red+Green+Blue, data = data.kfold, subset=fold!=kfold)
+  holdout <- filter(data.kfold, fold == kfold)
+  predictions <- lda.fit %>% predict(holdout, type='response')
+  # return actual, then predictions
+  return(data_frame(fold=i,actual=holdout$Class.cl,prediction=predictions$posterior[2],pred_class=predictions$class, x=predictions$x))
+}
+
+lda.pred <- data_frame(fold=numeric(),actual=factor(),prediction=numeric(), pred_class=factor(), x=numeric())
+for (i in 1:10) {
+  lda.pred<-full_join(lda.pred, lda.cross_val(i))
+}
+
+# https://yardstick.tidymodels.org/reference/roc_curve.html
+lda.roc <- lda.pred %>% roc_curve(actual,prediction)
+lda.roc
+lda.auc <- lda.pred %>% roc_auc(actual,prediction)
+lda.auc
+
+lda.roc %>% ggplot(aes(x = 1 - specificity, y = sensitivity)) +
+  geom_path() + geom_abline(lty=3) + coord_equal()
+
+lda.pr <- lda.pred %>% pr_curve(actual,prediction)
+lda.pr %>% ggplot(aes(x = recall, y = precision)) +
+  geom_path() + coord_equal()
+```
+
 
 ## QDA
+```{r}
+qda.cross_val <- function(kfold) {
+  qda.fit <- qda(Class.cl~Red+Green+Blue, data = data.kfold, subset=fold!=kfold)
+  #logistic.fit %>% augment(newdata=filter(data.kfold$fold == kfold))
+  holdout <- filter(data.kfold, fold == kfold)
+  predictions <- qda.fit %>% predict(holdout, type='response')
+  # return actual, then predictions
+  return(data_frame(fold=i,actual=holdout$Class.cl,prediction=predictions))
+}
+
+qda.pred <- data_frame(fold=numeric(),actual=factor(),prediction=numeric())
+for (i in 1:10) {
+  qda.pred<-full_join(qda.pred, qda.cross_val(i))
+  
+}
+```
 
 ## KNN
+```{r}
+# do I want to take back some control here?
+ctl <- trainControl(method = "cv", number = 10)
+knn.fit <- caret::train(Class.cl~Red+Green+Blue, data = data.kfold, method = 'knn', trControl = ctl)
+knn.fit
+
+knn.pred <- knn.fit %>% predict(data.test, type='prob')
+data.test.knn <- data.test %>% mutate(prediction = knn.pred[,1])
+
+knn.roc <- data.test.knn %>% roc_curve(Class.cl,prediction)
+knn.roc
+knn.auc <- data.test.knn %>% roc_auc(Class.cl,prediction)
+knn.auc
+
+knn.pr <- data.test.knn %>% pr_curve(Class.cl,prediction)
+knn.pr
+knn.pr_auc <- data.test.knn %>% pr_auc(Class.cl,prediction)
+knn.pr_auc
+
+knn.roc %>% ggplot(aes(x = 1 - specificity, y = sensitivity)) +
+  geom_path() + geom_abline(lty=3) + coord_equal()
+
+knn.pr %>% ggplot(aes(x = recall, y = precision)) +
+  geom_path() + coord_equal() # formatting issues???
+
+```
 
 ### Tuning Parameter $k$
 
 How were tuning parameter(s) selected? What value is used? Plots/Tables/etc.
 
 ## Penalized Logistic Regression (ElasticNet)
+
+```{r}
+# split data into train and test
+# us kfold cv to select an optimal lambda and alpha (alpha determines lasso, ridge, or something in between)
+# predict values and determine the error
+```
 
 ### Tuning Parameters
 
@@ -231,7 +372,7 @@ How were tuning parameter(s) selected? What value is used? Plots/Tables/etc.
 
 
 ```{r, echo=FALSE}
-# knitr::knit_exit()    # ignore everything after this
+knitr::knit_exit()    # ignore everything after this
 ## Uncomment this line for Part I
 ## You can remove the entire code chunk for Part II
 ```

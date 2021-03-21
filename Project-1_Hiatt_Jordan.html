@@ -1603,7 +1603,7 @@ div.tocify {
 
 <h1 class="title toc-ignore">Disaster Relief Project: Part I</h1>
 <h4 class="author">Jordan Hiatt</h4>
-<h4 class="date">Mar 07, 2021</h4>
+<h4 class="date">Mar 20, 2021</h4>
 
 </div>
 
@@ -1637,24 +1637,216 @@ pre {
 <h1><span class="header-section-number">2</span> Training Data / EDA</h1>
 <p>Load data, explore data, etc.</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1"></a><span class="co"># Load Required Packages</span></span>
-<span id="cb1-2"><a href="#cb1-2"></a><span class="kw">library</span>(tidyverse)</span></code></pre></div>
+<span id="cb1-2"><a href="#cb1-2"></a><span class="kw">library</span>(tidyverse)</span>
+<span id="cb1-3"><a href="#cb1-3"></a><span class="kw">library</span>(broom)</span>
+<span id="cb1-4"><a href="#cb1-4"></a><span class="kw">library</span>(caret)</span></code></pre></div>
 </div>
 <div id="model-training" class="section level1">
 <h1><span class="header-section-number">3</span> Model Training</h1>
 <div id="set-up" class="section level2">
 <h2><span class="header-section-number">3.1</span> Set-up</h2>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1"></a><span class="co"># load in csv</span></span>
+<span id="cb2-2"><a href="#cb2-2"></a>data &lt;-<span class="st"> </span><span class="kw">read.csv</span>(<span class="st">&#39;HaitiPixels.csv&#39;</span>,<span class="dt">colClasses=</span><span class="kw">c</span>(<span class="st">&quot;factor&quot;</span>,<span class="kw">rep</span>(<span class="st">&quot;numeric&quot;</span>,<span class="dv">3</span>))) <span class="co"># for help with colClasses and rep() https://stackoverflow.com/questions/2805357/specifying-colclasses-in-the-read-csv</span></span>
+<span id="cb2-3"><a href="#cb2-3"></a></span>
+<span id="cb2-4"><a href="#cb2-4"></a><span class="co"># gather general csv data</span></span>
+<span id="cb2-5"><a href="#cb2-5"></a>data <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">dim</span>()</span></code></pre></div>
+<pre><code>#&gt; [1] 63241     4</code></pre>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1"></a>data <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">filter</span>(<span class="kw">is.na</span>(data))</span></code></pre></div>
+<pre><code>#&gt; [1] Class Red   Green Blue 
+#&gt; &lt;0 rows&gt; (or 0-length row.names)</code></pre>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1"></a><span class="co"># classes</span></span>
+<span id="cb6-2"><a href="#cb6-2"></a>data<span class="op">$</span>Class <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">contrasts</span>()</span></code></pre></div>
+<pre><code>#&gt;                  Rooftop Soil Various Non-Tarp Vegetation
+#&gt; Blue Tarp              0    0                0          0
+#&gt; Rooftop                1    0                0          0
+#&gt; Soil                   0    1                0          0
+#&gt; Various Non-Tarp       0    0                1          0
+#&gt; Vegetation             0    0                0          1</code></pre>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1"></a>data <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">filter</span>(Class<span class="op">==</span><span class="st">&#39;Blue Tarp&#39;</span>) <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">dim</span>()</span></code></pre></div>
+<pre><code>#&gt; [1] 2022    4</code></pre>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1"></a>data <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">filter</span>(Class<span class="op">==</span><span class="st">&#39;Rooftop&#39;</span>) <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">dim</span>()</span></code></pre></div>
+<pre><code>#&gt; [1] 9903    4</code></pre>
+<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1"></a>data <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">filter</span>(Class<span class="op">==</span><span class="st">&#39;Soil&#39;</span>) <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">dim</span>()</span></code></pre></div>
+<pre><code>#&gt; [1] 20566     4</code></pre>
+<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1"></a>data <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">filter</span>(Class<span class="op">==</span><span class="st">&#39;Various Non-Tarp&#39;</span>) <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">dim</span>()</span></code></pre></div>
+<pre><code>#&gt; [1] 4744    4</code></pre>
+<div class="sourceCode" id="cb16"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1"></a>data <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">filter</span>(Class<span class="op">==</span><span class="st">&#39;Vegetation&#39;</span>) <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">dim</span>()</span></code></pre></div>
+<pre><code>#&gt; [1] 26006     4</code></pre>
+<div class="sourceCode" id="cb18"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1"></a><span class="co"># Combine classes</span></span>
+<span id="cb18-2"><a href="#cb18-2"></a>data &lt;-<span class="st"> </span>data <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">mutate</span>(<span class="dt">Class.cl =</span> <span class="kw">ifelse</span>(Class<span class="op">==</span><span class="st">&#39;Blue Tarp&#39;</span>,<span class="st">&#39;Blue Tarp&#39;</span>,<span class="st">&#39;Other&#39;</span>))</span>
+<span id="cb18-3"><a href="#cb18-3"></a>data<span class="op">$</span>Class.cl &lt;-<span class="st"> </span>data<span class="op">$</span>Class.cl <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">as_factor</span>()</span>
+<span id="cb18-4"><a href="#cb18-4"></a>data<span class="op">$</span>Class.cl <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">contrasts</span>()</span></code></pre></div>
+<pre><code>#&gt;           Blue Tarp
+#&gt; Other             0
+#&gt; Blue Tarp         1</code></pre>
+<div class="sourceCode" id="cb20"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1"></a><span class="co"># split into train and holdout</span></span>
+<span id="cb20-2"><a href="#cb20-2"></a>holdout_index &lt;-<span class="st"> </span><span class="kw">sample</span>()</span></code></pre></div>
+<pre><code>#&gt; Error in sample(): argument &quot;x&quot; is missing, with no default</code></pre>
+<div class="sourceCode" id="cb22"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1"></a><span class="co">## set up 10-fold cross-validation</span></span>
+<span id="cb22-2"><a href="#cb22-2"></a><span class="kw">set.seed</span>(<span class="dv">42</span>)</span>
+<span id="cb22-3"><a href="#cb22-3"></a><span class="co"># First we get the number of items in each fold, then we get an index number cutt off for each fold if we were to number observations 1 to n</span></span>
+<span id="cb22-4"><a href="#cb22-4"></a>foldcount &lt;-<span class="st"> </span><span class="kw">floor</span>(<span class="kw">dim</span>(data)[<span class="dv">1</span>]<span class="op">/</span><span class="dv">10</span>) <span class="co"># this should give us the correct number of observations in each fold</span></span>
+<span id="cb22-5"><a href="#cb22-5"></a><span class="co"># we need to make sure there is no top end or the last observation would be missed due to rounding, so we stop at 9</span></span>
+<span id="cb22-6"><a href="#cb22-6"></a>cuttoff_list &lt;-<span class="st"> </span><span class="kw">list</span>()</span>
+<span id="cb22-7"><a href="#cb22-7"></a><span class="cf">for</span>(i <span class="cf">in</span> <span class="dv">1</span><span class="op">:</span><span class="dv">9</span>){</span>
+<span id="cb22-8"><a href="#cb22-8"></a>  cuttoff_list &lt;-<span class="st"> </span>cuttoff_list <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">append</span>(foldcount<span class="op">*</span>i)</span>
+<span id="cb22-9"><a href="#cb22-9"></a>}</span>
+<span id="cb22-10"><a href="#cb22-10"></a></span>
+<span id="cb22-11"><a href="#cb22-11"></a><span class="co"># !!!!!!!!!!!!!!!!!!! set aside more data for further testing later on, make sure there is blue tarp data involved</span></span>
+<span id="cb22-12"><a href="#cb22-12"></a><span class="co"># create function for assigning folds</span></span>
+<span id="cb22-13"><a href="#cb22-13"></a><span class="co"># really slow needs to be updated</span></span>
+<span id="cb22-14"><a href="#cb22-14"></a>assign_fold &lt;-<span class="st"> </span><span class="cf">function</span>(id) {</span>
+<span id="cb22-15"><a href="#cb22-15"></a>  <span class="cf">if</span> (id<span class="op">&lt;</span>cuttoff_list[<span class="dv">1</span>]) {</span>
+<span id="cb22-16"><a href="#cb22-16"></a>    <span class="kw">return</span>(<span class="dv">1</span>)</span>
+<span id="cb22-17"><a href="#cb22-17"></a>  } <span class="cf">else</span> <span class="cf">if</span> (id<span class="op">&lt;</span>cuttoff_list[<span class="dv">2</span>]) {</span>
+<span id="cb22-18"><a href="#cb22-18"></a>    <span class="kw">return</span>(<span class="dv">2</span>)</span>
+<span id="cb22-19"><a href="#cb22-19"></a>  } <span class="cf">else</span> <span class="cf">if</span> (id<span class="op">&lt;</span>cuttoff_list[<span class="dv">3</span>]) {</span>
+<span id="cb22-20"><a href="#cb22-20"></a>    <span class="kw">return</span>(<span class="dv">3</span>)</span>
+<span id="cb22-21"><a href="#cb22-21"></a>  } <span class="cf">else</span> <span class="cf">if</span> (id<span class="op">&lt;</span>cuttoff_list[<span class="dv">4</span>]) {</span>
+<span id="cb22-22"><a href="#cb22-22"></a>    <span class="kw">return</span>(<span class="dv">4</span>)</span>
+<span id="cb22-23"><a href="#cb22-23"></a>  } <span class="cf">else</span> <span class="cf">if</span> (id<span class="op">&lt;</span>cuttoff_list[<span class="dv">5</span>]) {</span>
+<span id="cb22-24"><a href="#cb22-24"></a>    <span class="kw">return</span>(<span class="dv">5</span>)</span>
+<span id="cb22-25"><a href="#cb22-25"></a>  } <span class="cf">else</span> <span class="cf">if</span> (id<span class="op">&lt;</span>cuttoff_list[<span class="dv">6</span>]) {</span>
+<span id="cb22-26"><a href="#cb22-26"></a>    <span class="kw">return</span>(<span class="dv">6</span>)</span>
+<span id="cb22-27"><a href="#cb22-27"></a>  } <span class="cf">else</span> <span class="cf">if</span> (id<span class="op">&lt;</span>cuttoff_list[<span class="dv">7</span>]) {</span>
+<span id="cb22-28"><a href="#cb22-28"></a>    <span class="kw">return</span>(<span class="dv">7</span>)</span>
+<span id="cb22-29"><a href="#cb22-29"></a>  } <span class="cf">else</span> <span class="cf">if</span> (id<span class="op">&lt;</span>cuttoff_list[<span class="dv">8</span>]) {</span>
+<span id="cb22-30"><a href="#cb22-30"></a>    <span class="kw">return</span>(<span class="dv">8</span>)</span>
+<span id="cb22-31"><a href="#cb22-31"></a>  } <span class="cf">else</span> <span class="cf">if</span> (id<span class="op">&lt;</span>cuttoff_list[<span class="dv">9</span>]) {</span>
+<span id="cb22-32"><a href="#cb22-32"></a>    <span class="kw">return</span>(<span class="dv">9</span>)</span>
+<span id="cb22-33"><a href="#cb22-33"></a>  } <span class="cf">else</span> {</span>
+<span id="cb22-34"><a href="#cb22-34"></a>    <span class="kw">return</span>(<span class="dv">10</span>)</span>
+<span id="cb22-35"><a href="#cb22-35"></a>  }</span>
+<span id="cb22-36"><a href="#cb22-36"></a>}</span>
+<span id="cb22-37"><a href="#cb22-37"></a></span>
+<span id="cb22-38"><a href="#cb22-38"></a>data.kfold &lt;-<span class="st"> </span>data <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">mutate</span>(<span class="dt">random_id =</span> <span class="kw">sample</span>(<span class="dv">1</span><span class="op">:</span><span class="kw">dim</span>(data)[<span class="dv">1</span>], <span class="dt">size =</span> <span class="kw">dim</span>(data)[<span class="dv">1</span>], <span class="dt">replace =</span> <span class="ot">FALSE</span>), <span class="dt">fold =</span> <span class="dv">10</span>) <span class="co"># sample without replacement: https://stackoverflow.com/questions/14864275/randomize-w-no-repeats-using-r</span></span>
+<span id="cb22-39"><a href="#cb22-39"></a></span>
+<span id="cb22-40"><a href="#cb22-40"></a><span class="cf">for</span>(i <span class="cf">in</span> <span class="dv">1</span><span class="op">:</span><span class="kw">dim</span>(data.kfold)[<span class="dv">1</span>]){</span>
+<span id="cb22-41"><a href="#cb22-41"></a>  data.kfold[i,]<span class="op">$</span>fold =<span class="st"> </span><span class="kw">assign_fold</span>(data.kfold[i,]<span class="op">$</span>random_id)</span>
+<span id="cb22-42"><a href="#cb22-42"></a>}</span>
+<span id="cb22-43"><a href="#cb22-43"></a></span>
+<span id="cb22-44"><a href="#cb22-44"></a><span class="co"># for(i in 1:length(cuttoff_list)){</span></span>
+<span id="cb22-45"><a href="#cb22-45"></a><span class="co">#   f &lt;- paste0(&#39;fold0&#39;,i)</span></span>
+<span id="cb22-46"><a href="#cb22-46"></a><span class="co">#   data.kfold &lt;- data.kfold %&gt;% purrr::map(if(random_id&lt;cuttoff_list[[i]]){fold = f})</span></span>
+<span id="cb22-47"><a href="#cb22-47"></a><span class="co"># }</span></span>
+<span id="cb22-48"><a href="#cb22-48"></a><span class="co">#data.kfold &lt;- data.kfold %&gt;% mutate(fold = )</span></span>
+<span id="cb22-49"><a href="#cb22-49"></a><span class="co">#kfold &lt;- data %&gt;% vfold_cv(v = 10, repeats = 1) # https://rsample.tidymodels.org/reference/vfold_cv.html</span></span></code></pre></div>
+<div class="sourceCode" id="cb23"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1"></a>data.kfold <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">filter</span>(fold<span class="op">==</span><span class="dv">1</span>) <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">dim</span>()</span></code></pre></div>
+<pre><code>#&gt; [1] 6323    7</code></pre>
+<div class="sourceCode" id="cb25"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb25-1"><a href="#cb25-1"></a>data.kfold <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">filter</span>(fold<span class="op">==</span><span class="dv">2</span>) <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">dim</span>()</span></code></pre></div>
+<pre><code>#&gt; [1] 6324    7</code></pre>
+<div class="sourceCode" id="cb27"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb27-1"><a href="#cb27-1"></a>data.kfold <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">filter</span>(fold<span class="op">==</span><span class="dv">3</span>) <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">dim</span>()</span></code></pre></div>
+<pre><code>#&gt; [1] 6324    7</code></pre>
+<div class="sourceCode" id="cb29"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb29-1"><a href="#cb29-1"></a>data.kfold <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">filter</span>(fold<span class="op">==</span><span class="dv">4</span>) <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">dim</span>()</span></code></pre></div>
+<pre><code>#&gt; [1] 6324    7</code></pre>
+<div class="sourceCode" id="cb31"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb31-1"><a href="#cb31-1"></a>data.kfold <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">filter</span>(fold<span class="op">==</span><span class="dv">5</span>) <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">dim</span>()</span></code></pre></div>
+<pre><code>#&gt; [1] 6324    7</code></pre>
+<div class="sourceCode" id="cb33"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb33-1"><a href="#cb33-1"></a>data.kfold <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">filter</span>(fold<span class="op">==</span><span class="dv">6</span>) <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">dim</span>()</span></code></pre></div>
+<pre><code>#&gt; [1] 6324    7</code></pre>
+<div class="sourceCode" id="cb35"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb35-1"><a href="#cb35-1"></a>data.kfold <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">filter</span>(fold<span class="op">==</span><span class="dv">7</span>) <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">dim</span>()</span></code></pre></div>
+<pre><code>#&gt; [1] 6324    7</code></pre>
+<div class="sourceCode" id="cb37"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb37-1"><a href="#cb37-1"></a>data.kfold <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">filter</span>(fold<span class="op">==</span><span class="dv">8</span>) <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">dim</span>()</span></code></pre></div>
+<pre><code>#&gt; [1] 6324    7</code></pre>
+<div class="sourceCode" id="cb39"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb39-1"><a href="#cb39-1"></a>data.kfold <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">filter</span>(fold<span class="op">==</span><span class="dv">9</span>) <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">dim</span>()</span></code></pre></div>
+<pre><code>#&gt; [1] 6324    7</code></pre>
+<div class="sourceCode" id="cb41"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb41-1"><a href="#cb41-1"></a>data.kfold <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">filter</span>(fold<span class="op">==</span><span class="dv">10</span>) <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">dim</span>()</span></code></pre></div>
+<pre><code>#&gt; [1] 6326    7</code></pre>
+<p>It looks like these folds are evenly split</p>
 </div>
 <div id="logistic-regression" class="section level2">
 <h2><span class="header-section-number">3.2</span> Logistic Regression</h2>
+<div class="sourceCode" id="cb43"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb43-1"><a href="#cb43-1"></a><span class="co"># loop through k folds</span></span>
+<span id="cb43-2"><a href="#cb43-2"></a>logist.cross_val &lt;-<span class="st"> </span><span class="cf">function</span>(kfold) {</span>
+<span id="cb43-3"><a href="#cb43-3"></a>  logistic.fit &lt;-<span class="st"> </span><span class="kw">glm</span>(Class.cl<span class="op">~</span>Red<span class="op">+</span>Green<span class="op">+</span>Blue,<span class="dt">family =</span> binomial, <span class="dt">data =</span> data.kfold, <span class="dt">subset=</span>fold<span class="op">!=</span>kfold)</span>
+<span id="cb43-4"><a href="#cb43-4"></a>  <span class="co">#logistic.fit %&gt;% augment(newdata=filter(data.kfold$fold == kfold))</span></span>
+<span id="cb43-5"><a href="#cb43-5"></a>  holdout &lt;-<span class="st"> </span><span class="kw">filter</span>(data.kfold, fold <span class="op">==</span><span class="st"> </span>kfold)</span>
+<span id="cb43-6"><a href="#cb43-6"></a>  predictions &lt;-<span class="st"> </span>logistic.fit <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">predict</span>(holdout, <span class="dt">type=</span><span class="st">&#39;response&#39;</span>)</span>
+<span id="cb43-7"><a href="#cb43-7"></a>  <span class="co"># return actual, then predictions</span></span>
+<span id="cb43-8"><a href="#cb43-8"></a>  <span class="kw">return</span>(<span class="kw">data_frame</span>(<span class="dt">fold=</span>i,<span class="dt">actual=</span>holdout<span class="op">$</span>Class.cl,<span class="dt">prediction=</span>predictions))</span>
+<span id="cb43-9"><a href="#cb43-9"></a>}</span>
+<span id="cb43-10"><a href="#cb43-10"></a></span>
+<span id="cb43-11"><a href="#cb43-11"></a>logistic.pred &lt;-<span class="st"> </span><span class="kw">data_frame</span>(<span class="dt">fold=</span><span class="kw">numeric</span>(),<span class="dt">actual=</span><span class="kw">factor</span>(),<span class="dt">prediction=</span><span class="kw">numeric</span>())</span></code></pre></div>
+<pre><code>#&gt; Warning: `data_frame()` is deprecated as of tibble 1.1.0.
+#&gt; Please use `tibble()` instead.
+#&gt; This warning is displayed once every 8 hours.
+#&gt; Call `lifecycle::last_warnings()` to see where this warning was generated.</code></pre>
+<div class="sourceCode" id="cb45"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb45-1"><a href="#cb45-1"></a><span class="cf">for</span> (i <span class="cf">in</span> <span class="dv">1</span><span class="op">:</span><span class="dv">10</span>) {</span>
+<span id="cb45-2"><a href="#cb45-2"></a>  logistic.pred&lt;-<span class="kw">full_join</span>(logistic.pred, <span class="kw">cross_val</span>(i))</span>
+<span id="cb45-3"><a href="#cb45-3"></a>  </span>
+<span id="cb45-4"><a href="#cb45-4"></a>}</span></code></pre></div>
+<pre><code>#&gt; Error in cross_val(i): could not find function &quot;cross_val&quot;</code></pre>
+<div class="sourceCode" id="cb47"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb47-1"><a href="#cb47-1"></a><span class="co"># Next steps</span></span>
+<span id="cb47-2"><a href="#cb47-2"></a><span class="co"># 1. Set tuning parameters</span></span>
+<span id="cb47-3"><a href="#cb47-3"></a><span class="co"># 2. ROC curve (do this first?)</span></span>
+<span id="cb47-4"><a href="#cb47-4"></a></span>
+<span id="cb47-5"><a href="#cb47-5"></a></span>
+<span id="cb47-6"><a href="#cb47-6"></a></span>
+<span id="cb47-7"><a href="#cb47-7"></a><span class="co"># sci kit learn, tidymodels (new version of caret) (yardstick for confusion matrix)</span></span>
+<span id="cb47-8"><a href="#cb47-8"></a><span class="co"># Output of the loop:</span></span>
+<span id="cb47-9"><a href="#cb47-9"></a><span class="co">#   training models</span></span>
+<span id="cb47-10"><a href="#cb47-10"></a><span class="co">#   predictions</span></span>
+<span id="cb47-11"><a href="#cb47-11"></a><span class="co">#   output - data frame with predictions (in terms of probabilities), actuals, name of iteration</span></span></code></pre></div>
 </div>
 <div id="lda" class="section level2">
 <h2><span class="header-section-number">3.3</span> LDA</h2>
+<div class="sourceCode" id="cb48"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb48-1"><a href="#cb48-1"></a>lda.cross_val &lt;-<span class="st"> </span><span class="cf">function</span>(kfold) {</span>
+<span id="cb48-2"><a href="#cb48-2"></a>  lda.fit &lt;-<span class="st"> </span><span class="kw">lda</span>(Class.cl<span class="op">~</span>Red<span class="op">+</span>Green<span class="op">+</span>Blue, <span class="dt">data =</span> data.kfold, <span class="dt">subset=</span>fold<span class="op">!=</span>kfold)</span>
+<span id="cb48-3"><a href="#cb48-3"></a>  <span class="co">#logistic.fit %&gt;% augment(newdata=filter(data.kfold$fold == kfold))</span></span>
+<span id="cb48-4"><a href="#cb48-4"></a>  holdout &lt;-<span class="st"> </span><span class="kw">filter</span>(data.kfold, fold <span class="op">==</span><span class="st"> </span>kfold)</span>
+<span id="cb48-5"><a href="#cb48-5"></a>  predictions &lt;-<span class="st"> </span>lda.fit <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">predict</span>(holdout, <span class="dt">type=</span><span class="st">&#39;response&#39;</span>)</span>
+<span id="cb48-6"><a href="#cb48-6"></a>  <span class="co"># return actual, then predictions</span></span>
+<span id="cb48-7"><a href="#cb48-7"></a>  <span class="kw">return</span>(<span class="kw">data_frame</span>(<span class="dt">fold=</span>i,<span class="dt">actual=</span>holdout<span class="op">$</span>Class.cl,<span class="dt">prediction=</span>predictions))</span>
+<span id="cb48-8"><a href="#cb48-8"></a>}</span>
+<span id="cb48-9"><a href="#cb48-9"></a></span>
+<span id="cb48-10"><a href="#cb48-10"></a>lda.pred &lt;-<span class="st"> </span><span class="kw">data_frame</span>(<span class="dt">fold=</span><span class="kw">numeric</span>(),<span class="dt">actual=</span><span class="kw">factor</span>(),<span class="dt">prediction=</span><span class="kw">numeric</span>())</span>
+<span id="cb48-11"><a href="#cb48-11"></a><span class="cf">for</span> (i <span class="cf">in</span> <span class="dv">1</span><span class="op">:</span><span class="dv">10</span>) {</span>
+<span id="cb48-12"><a href="#cb48-12"></a>  lda.pred&lt;-<span class="kw">full_join</span>(logistic.pred, <span class="kw">cross_val</span>(i))</span>
+<span id="cb48-13"><a href="#cb48-13"></a>  </span>
+<span id="cb48-14"><a href="#cb48-14"></a>}</span></code></pre></div>
+<pre><code>#&gt; Error in cross_val(i): could not find function &quot;cross_val&quot;</code></pre>
 </div>
 <div id="qda" class="section level2">
 <h2><span class="header-section-number">3.4</span> QDA</h2>
+<div class="sourceCode" id="cb50"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb50-1"><a href="#cb50-1"></a>qda.cross_val &lt;-<span class="st"> </span><span class="cf">function</span>(kfold) {</span>
+<span id="cb50-2"><a href="#cb50-2"></a>  qda.fit &lt;-<span class="st"> </span><span class="kw">qda</span>(Class.cl<span class="op">~</span>Red<span class="op">+</span>Green<span class="op">+</span>Blue, <span class="dt">data =</span> data.kfold, <span class="dt">subset=</span>fold<span class="op">!=</span>kfold)</span>
+<span id="cb50-3"><a href="#cb50-3"></a>  <span class="co">#logistic.fit %&gt;% augment(newdata=filter(data.kfold$fold == kfold))</span></span>
+<span id="cb50-4"><a href="#cb50-4"></a>  holdout &lt;-<span class="st"> </span><span class="kw">filter</span>(data.kfold, fold <span class="op">==</span><span class="st"> </span>kfold)</span>
+<span id="cb50-5"><a href="#cb50-5"></a>  predictions &lt;-<span class="st"> </span>qda.fit <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">predict</span>(holdout, <span class="dt">type=</span><span class="st">&#39;response&#39;</span>)</span>
+<span id="cb50-6"><a href="#cb50-6"></a>  <span class="co"># return actual, then predictions</span></span>
+<span id="cb50-7"><a href="#cb50-7"></a>  <span class="kw">return</span>(<span class="kw">data_frame</span>(<span class="dt">fold=</span>i,<span class="dt">actual=</span>holdout<span class="op">$</span>Class.cl,<span class="dt">prediction=</span>predictions))</span>
+<span id="cb50-8"><a href="#cb50-8"></a>}</span>
+<span id="cb50-9"><a href="#cb50-9"></a></span>
+<span id="cb50-10"><a href="#cb50-10"></a>qda.pred &lt;-<span class="st"> </span><span class="kw">data_frame</span>(<span class="dt">fold=</span><span class="kw">numeric</span>(),<span class="dt">actual=</span><span class="kw">factor</span>(),<span class="dt">prediction=</span><span class="kw">numeric</span>())</span>
+<span id="cb50-11"><a href="#cb50-11"></a><span class="cf">for</span> (i <span class="cf">in</span> <span class="dv">1</span><span class="op">:</span><span class="dv">10</span>) {</span>
+<span id="cb50-12"><a href="#cb50-12"></a>  qda.pred&lt;-<span class="kw">full_join</span>(logistic.pred, <span class="kw">cross_val</span>(i))</span>
+<span id="cb50-13"><a href="#cb50-13"></a>  </span>
+<span id="cb50-14"><a href="#cb50-14"></a>}</span></code></pre></div>
+<pre><code>#&gt; Error in cross_val(i): could not find function &quot;cross_val&quot;</code></pre>
 </div>
 <div id="knn" class="section level2">
 <h2><span class="header-section-number">3.5</span> KNN</h2>
+<div class="sourceCode" id="cb52"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb52-1"><a href="#cb52-1"></a><span class="co"># do I want to take back some control here?</span></span>
+<span id="cb52-2"><a href="#cb52-2"></a>ctl &lt;-<span class="st"> </span><span class="kw">trainControl</span>(<span class="dt">method =</span> <span class="st">&quot;cv&quot;</span>, <span class="dt">number =</span> <span class="dv">10</span>)</span>
+<span id="cb52-3"><a href="#cb52-3"></a>knn.fit &lt;-<span class="st"> </span>caret<span class="op">::</span><span class="kw">train</span>(Class.cl<span class="op">~</span>Red<span class="op">+</span>Green<span class="op">+</span>Blue, <span class="dt">data =</span> data.kfold, <span class="dt">method =</span> <span class="st">&#39;knn&#39;</span>, <span class="dt">trControl =</span> ctl)</span>
+<span id="cb52-4"><a href="#cb52-4"></a>knn.fit</span></code></pre></div>
+<pre><code>#&gt; k-Nearest Neighbors 
+#&gt; 
+#&gt; 63241 samples
+#&gt;     3 predictor
+#&gt;     2 classes: &#39;Other&#39;, &#39;Blue Tarp&#39; 
+#&gt; 
+#&gt; No pre-processing
+#&gt; Resampling: Cross-Validated (10 fold) 
+#&gt; Summary of sample sizes: 56916, 56917, 56917, 56917, 56917, 56917, ... 
+#&gt; Resampling results across tuning parameters:
+#&gt; 
+#&gt;   k  Accuracy   Kappa    
+#&gt;   5  0.9972170  0.9550753
+#&gt;   7  0.9972170  0.9552447
+#&gt;   9  0.9971854  0.9547054
+#&gt; 
+#&gt; Accuracy was used to select the optimal model using the largest value.
+#&gt; The final value used for the model was k = 7.</code></pre>
 <div id="tuning-parameter-k" class="section level3">
 <h3><span class="header-section-number">3.5.1</span> Tuning Parameter <span class="math inline">\(k\)</span></h3>
 <p>How were tuning parameter(s) selected? What value is used? Plots/Tables/etc.</p>
@@ -1662,6 +1854,9 @@ pre {
 </div>
 <div id="penalized-logistic-regression-elasticnet" class="section level2">
 <h2><span class="header-section-number">3.6</span> Penalized Logistic Regression (ElasticNet)</h2>
+<div class="sourceCode" id="cb54"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb54-1"><a href="#cb54-1"></a><span class="co"># split data into train and test</span></span>
+<span id="cb54-2"><a href="#cb54-2"></a><span class="co"># us kfold cv to select an optimal lambda and alpha (alpha determines lasso, ridge, or something in between)</span></span>
+<span id="cb54-3"><a href="#cb54-3"></a><span class="co"># predict values and determine the error</span></span></code></pre></div>
 <div id="tuning-parameters" class="section level3">
 <h3><span class="header-section-number">3.6.1</span> Tuning Parameters</h3>
 <p><strong>NOTE: PART II same as above plus add Random Forest and SVM to Model Training.</strong></p>
