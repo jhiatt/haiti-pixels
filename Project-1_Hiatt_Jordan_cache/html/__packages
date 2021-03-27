@@ -1,10 +1,4 @@
 base
-methods
-datasets
-utils
-grDevices
-graphics
-stats
 tidyverse
 ggplot2
 tibble
@@ -17,3 +11,15 @@ forcats
 broom
 lattice
 caret
+MASS
+tidymodels
+scales
+dials
+infer
+modeldata
+parsnip
+recipes
+rsample
+tune
+workflows
+yardstick
