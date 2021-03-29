@@ -179,6 +179,7 @@ assign_fold <- function(id) {
   }
 }
 
+set.seed(42)
 # generate a random id, no repeated values, from 1 to the size of the data
 data.kfold <- data %>% mutate(random_id = sample(1:dim(data)[1], size = dim(data)[1], replace = FALSE), fold = 10) # sample without replacement: https://stackoverflow.com/questions/14864275/randomize-w-no-repeats-using-r
 
@@ -236,9 +237,14 @@ logistic.roc
 logistic.auc <- logistic.pred %>% roc_auc(actual,prediction)
 logistic.auc
 
+# calculate ideal threshold from ROC
+logistic.roc <- logistic.roc %>% rowid_to_column()
+logistic.thresh <- logistic.roc %>% filter(sensitivity == 1) %>% arrange(desc(specificity)) %>% head(1)
+
 # plot the ROC
 logistic.roc %>% ggplot(aes(x = 1 - specificity, y = sensitivity)) +
-  geom_path() + geom_abline(lty=3) + coord_equal()
+  geom_path() + geom_abline(lty=3) + coord_equal() +
+  geom_point(aes(1-logistic.thresh$specificity,logistic.thresh$sensitivity))
 
 # calculate the Precision Recall curve and AUC
 logistic.pr <- logistic.pred %>% pr_curve(actual,prediction)
@@ -246,10 +252,17 @@ logistic.pr
 logistic.pr_auc <- logistic.pred %>% pr_auc(actual,prediction)
 logistic.pr_auc
 
+# calculate ideal threshold from PR
+logistic.pr <- logistic.pr %>% rowid_to_column()
+logistic.thresh.pr <- logistic.pr %>% filter(recall == 1) %>% arrange(desc(precision)) %>% head(1)
+
 # Plot the Precision Recall curve
 # Needed some help expanding my graph vertically for readability https://stackoverflow.com/questions/13701347/force-the-origin-to-start-at-0
 logistic.pr %>% ggplot(aes(x = recall, y = precision)) +
-  geom_path() + coord_equal() + scale_y_continuous(expand = c(0, 0), limits = c(.00,1.05))
+  geom_path() + coord_equal() + scale_y_continuous(expand = c(0, 0), limits = c(.00,1.05))+
+  geom_point(aes(logistic.thresh.pr$recall,logistic.thresh.pr$precision))
+
+
 
 ```
 
@@ -259,10 +272,10 @@ For logistic regression, the area under the curve is very close to 1 and the cur
 
 Because we have such a small fraction of Blue tarp data, I am concerned that the high volume of correct easy predictions, where we are predicting that this is not a blue tarp, might skew the data. If there is a 97% chance that the observation is not a blue tarp, how can we be sure we are predicting true values (blue tarps) accurately. The ROC curve shows the true positive rate vs the true negative rate; the true negative rate may skew the results. For this reason I decided to also calculate a precision recall curve.
 
-Precision recall show the true positives as a percentage of total positives (recall), versus the true positives as a percentage of all predicted positives (precision). The precision recall also has a very strong AUC, actually stronger than the ROC curve. The curve, as plotted does not have a precision level below 0.95, which is confirmed by the data.
+Precision recall show the true positives as a percentage of total positives (recall), versus the true positives as a percentage of all predicted positives (precision). The precision recall also has a very strong AUC, actually stronger than the ROC curve. The curve, as plotted does not have a precision level below 0.95, which is confirmed by the data. The plot suggests that the model is very accurate under most thresholds we capture all true positives and the false positives are not a large proportion.
 
 ## LDA
-```{r}
+```{r lda, cache=TRUE}
 # calculate predictions for specific fold
 lda.cross_val <- function(kfold) {
   lda.fit <- lda(Class.cl~Red+Green+Blue, data = data.kfold, subset=fold!=kfold)
@@ -286,9 +299,14 @@ lda.roc
 lda.auc <- lda.pred %>% roc_auc(actual,prediction, event_level='second')
 lda.auc
 
+# calculate ideal threshold from ROC
+lda.roc <- lda.roc %>% rowid_to_column()
+lda.thresh <- lda.roc %>% filter(sensitivity == 1) %>% arrange(desc(specificity)) %>% head(1)
+
 # plot ROC
 lda.roc %>% ggplot(aes(x = 1 - specificity, y = sensitivity)) +
-  geom_path() + geom_abline(lty=3) + coord_equal()
+  geom_path() + geom_abline(lty=3) + coord_equal() +
+  geom_point(aes(1-lda.thresh$specificity,lda.thresh$sensitivity))
 
 # calculate PR
 lda.pr <- lda.pred %>% pr_curve(actual,prediction, event_level='second')
@@ -296,16 +314,21 @@ lda.pr
 lda.pr_auc <- lda.pred %>% pr_auc(actual,prediction, event_level='second')
 lda.pr_auc
 
+# calculate ideal threshold from PR
+lda.pr <- lda.pr %>% rowid_to_column()
+lda.thresh.pr <- lda.pr %>% filter(recall == 1) %>% arrange(desc(precision)) %>% head(1)
+
 # plot PR
 lda.pr %>% ggplot(aes(x = recall, y = precision)) +
-  geom_path() + coord_equal()
+  geom_path() + coord_equal() +
+  geom_point(aes(lda.thresh.pr$recall,lda.thresh.pr$precision))
 ```
 LDA follows logistic regression model calculation very closely. The only major difference being the output from lda.prediction. However, with minor adjustment the outcome is the same.
 
 The ROC curve is not as strong on LDA as it is on Logistic regression and the precision recall curve shows a sharp drop off in performance. Because we are concerned with the small number of true values in the data, we will weight the precision recall curve more heavily.
 
 ## QDA
-```{r}
+```{r qda, cache=TRUE}
 # calculate predictions for current fold
 qda.cross_val <- function(kfold) {
   qda.fit <- qda(Class.cl~Red+Green+Blue, data = data.kfold, subset=fold!=kfold)
@@ -329,9 +352,14 @@ qda.roc
 qda.auc <- qda.pred %>% roc_auc(actual,prediction, event_level='second')
 qda.auc
 
+# calculate ideal threshold from ROC
+qda.roc <- qda.roc %>% rowid_to_column()
+qda.thresh <- qda.roc %>% filter(sensitivity == 1) %>% arrange(desc(specificity)) %>% head(1)
+
 # plot ROC
 qda.roc %>% ggplot(aes(x = 1 - specificity, y = sensitivity)) +
-  geom_path() + geom_abline(lty=3) + coord_equal()
+  geom_path() + geom_abline(lty=3) + coord_equal() +
+  geom_point(aes(1-qda.thresh$specificity,qda.thresh$sensitivity))
 
 # calculate PR
 qda.pr <- qda.pred %>% pr_curve(actual,prediction, event_level='second')
@@ -339,15 +367,23 @@ qda.pr
 qda.pr_auc <- qda.pred %>% pr_auc(actual,prediction, event_level='second')
 qda.pr_auc
 
+# calculate ideal threshold from PR
+qda.pr <- qda.pr %>% rowid_to_column()
+qda.thresh.pr <- qda.pr %>% filter(recall == 1) %>% arrange(desc(precision)) %>% head(1)
+qda.thresh.pr.hp <- qda.pr[2600,]
+
 # plot PR
 qda.pr %>% ggplot(aes(x = recall, y = precision)) +
-  geom_path() + coord_equal()
+  geom_path() + coord_equal() +
+  geom_point(aes(qda.thresh.pr$recall,qda.thresh.pr$precision)) +
+  geom_point(aes(qda.pr[2600,]$recall,qda.pr[2600,]$precision, colour = 'red'))
+
 ```
 
-The calculation of QDA is almost identical to LDA. The ROC results are closer to Logistic regression with only a slightly lower AUC.  The precision recall out performs LDA but is behind Logisitic regression. Because precision recall and ROC appear significantly different, we will give preference to precision recall as stated above.
+The calculation of QDA is almost identical to LDA. The ROC results are closer to Logistic regression with only a slightly lower AUC.  The precision recall out performs LDA but is behind Logistic regression. Because precision recall and ROC appear significantly different, we will give preference to precision recall as stated above.
 
 ## KNN
-```{r}
+```{r, knn, cache=TRUE}
 # use my 10 folds for use in caret::train:
 # https://stackoverflow.com/questions/48458407/cross-validation-predictions-from-caret-in-assigned-to-different-folds
 getFoldList <- function(i){
@@ -365,92 +401,239 @@ knn.fit
 knn.pred <- knn.fit %>% predict(data.kfold, type='prob')
 data.knn <- data.kfold %>% mutate(prediction = knn.pred[,1])
 
+# calculate ROC
 knn.roc <- data.knn %>% roc_curve(Class.cl,prediction)
 knn.roc
 knn.auc <- data.knn %>% roc_auc(Class.cl,prediction)
 knn.auc
 
+# calculate ideal threshold from ROC
+knn.roc <- knn.roc %>% rowid_to_column()
+knn.thresh <- knn.roc %>% filter(sensitivity == 1) %>% arrange(desc(specificity)) %>% head(1)
+
+# plot ROC
+knn.roc %>% ggplot(aes(x = 1 - specificity, y = sensitivity)) +
+  geom_path() + geom_abline(lty=3) + coord_equal() +
+  geom_point(aes(1-knn.thresh$specificity,knn.thresh$sensitivity))
+
+# calculate PR
 knn.pr <- data.knn %>% pr_curve(Class.cl,prediction)
 knn.pr
 knn.pr_auc <- data.knn %>% pr_auc(Class.cl,prediction)
 knn.pr_auc
 
-knn.roc %>% ggplot(aes(x = 1 - specificity, y = sensitivity)) +
-  geom_path() + geom_abline(lty=3) + coord_equal()
+# calculate ideal threshold from PR
+knn.pr <- knn.pr %>% rowid_to_column()
+knn.thresh.pr <- knn.pr %>% filter(recall == 1) %>% arrange(desc(precision)) %>% head(1)
 
+# plot PR
 knn.pr %>% ggplot(aes(x = recall, y = precision)) +
-  geom_path() + coord_equal() + scale_y_continuous(expand = c(0, 0), limits = c(.00,1.05)) # formatting issues???
+  geom_path() + coord_equal() + scale_y_continuous(expand = c(0, 0), limits = c(.00,1.05)) +
+  geom_point(aes(knn.thresh.pr$recall,knn.thresh.pr$precision))
 
 ```
 
-For KNN we used the Caret package. Caret gives us a lot of flexibility and allows us to pass in our current folds so that we can compare this model with the others.
+For KNN we used the Caret package. Caret gives us a lot of flexibility and allows us to pass in our current folds so that we can compare this model with the others. The ROC curve and precision recall curve appears to outperform even logistic regression.
 
 ### Tuning Parameter $k$
 
-How were tuning parameter(s) selected? What value is used? Plots/Tables/etc.
+```{r knn-tuning}
+knn.fit$finalModel
+knn.fit$bestTune
+```
+
+The Caret package will run the cross validation through multiple values of k to select the optimal model. The model best model is the final model shown above, with the best tune of k=5. This is the model we used to calculate the ROC curve and precision recall curve.
 
 ## Penalized Logistic Regression (ElasticNet)
 
-```{r}
-# split data into train and test
-# us kfold cv to select an optimal lambda and alpha (alpha determines lasso, ridge, or something in between)
-# predict values and determine the error
+```{r, eval=FALSE, echo=FALSE}
+# tuning <- data.frame(alpha=c(rep(0,100),rep(.5,100),rep(1,100)), lambda=10^seq(10,0,length=300))
+# elnet.fit <- caret::train(Class.cl~Red+Green+Blue, data=data.kfold, method="glmnet", 
+#              tuneGrid=tuning, # alpha 0 is ridge alpha 1 is lasso
+#              trControl=trainControl("cv", number=5, returnResamp='all', index = fold_list, search = "grid"))
+```
 
+```{r elasticnet, cache=TRUE}
+# First method
 # loop through lambda and alpha
+library(glmnet)
 set.seed(42)
 
-# setting lambda, find loss with an intercept only model.
-# might be scaled so this might not work for me.
 
-#tunning <- data.frame(alpha, lambda)
+# Second method
+# https://stackoverflow.com/questions/48280074/r-how-to-let-glmnet-select-lambda-while-providing-an-alpha-range-in-caret
 elnet.fit <- caret::train(Class.cl~Red+Green+Blue, data=data.kfold, method="glmnet", 
-             tuneGrid=data.frame(alpha=rep(1,100), # alpha 0 is ridge alpha 1 is lasso
-                                 lambda=10^seq(10,0,length=100)),  # selected lambda range so that full curve is displayed
-             trControl=trainControl("cv", number=5, returnResamp='all'))
+             #tuneGrid=data.frame(alpha=rep(1,100), # alpha 0 is ridge alpha 1 is lasso
+                                 #lambda=10^seq(10,0,length=100)),  # selected lambda range so that full curve is displayed
+             trControl=trainControl("cv", number=5, returnResamp='all', index = fold_list, search = "grid"))
 
-# generate lambda coefficient table to make sure the correct range is captured, pass those through to carat with alpha at 0,1,0.5 for each value of lambda
-# With the correct output, generate a ROC curve with good thresholds.
-# overlap the thresholds on top of eachother.
-#plot(elnet.fit, "norm")    # coefficient path
-#plot(elnet.fit, "lambda")    # coefficient path
-#tidy(elnet.fit)    # coefficients for set of lambda values
-# plot(elnet.fit$finalModel)
-# 
-# plot(elnet.fit$)
-# plot(elnet.fit, xvar = "lambda", label = TRUE)
-# 
-elnet.fit$resample %>%
-  dplyr::arrange(elnet.fit$resample$lambda) %>%
-  dplyr::group_split(Resample) %>%
-  dplyr::bind_rows() %>%
-#   ggplot(aes(log(lambda), RMSE)) + geom_point() +
-#   geom_smooth(formula='y~x', method='loess', span=.5)
+# calculate predictions on data using best model
+elnet.pred <- elnet.fit %>% predict(data.kfold, type='prob', s=elnet.fit$bestTune[2])
 
-plot(elnet.fit, xvar = "lambda", main = "Elastic Net (Alpha = .25)\n\n\n")
+data.elnet <- data.kfold %>% mutate(prediction = elnet.pred[,2])
 
-plot(log(elnet.fit$resample$lambda),elnet.fit$resample$Accuracy)
+# calculate ROC
+elnet.roc <- data.elnet %>% roc_curve(Class.cl,prediction, event_level='second')
+elnet.roc
+elnet.auc <- data.elnet %>% roc_auc(Class.cl,prediction, event_level='second')
+elnet.auc
+
+# calculate ideal threshold from ROC
+elnet.roc <- elnet.roc %>% rowid_to_column()
+elnet.thresh <- elnet.roc %>% filter(sensitivity == 1) %>% arrange(desc(specificity)) %>% head(1)
+
+# plot ROC
+elnet.roc %>% ggplot(aes(x = 1 - specificity, y = sensitivity)) +
+  geom_path() + geom_abline(lty=3) + coord_equal() +
+  geom_point(aes(1-elnet.thresh$specificity,elnet.thresh$sensitivity))
+
+# calculate PR
+elnet.pr <- data.elnet %>% pr_curve(Class.cl,prediction, event_level='second')
+elnet.pr
+elnet.pr_auc <- data.elnet %>% pr_auc(Class.cl,prediction, event_level='second')
+elnet.pr_auc
+
+# calculate ideal threshold from PR
+elnet.pr <- elnet.pr %>% rowid_to_column()
+elnet.thresh.pr <- elnet.pr %>% filter(recall == 1) %>% arrange(desc(precision)) %>% head(1)
+elnet.thresh.pr.hp <- elnet.pr[1900,]
+
+# plot PR
+elnet.pr %>% ggplot(aes(x = recall, y = precision)) +
+  geom_path() + coord_equal() +
+  geom_point(aes(elnet.thresh.pr$recall,elnet.thresh.pr$precision)) +
+  geom_point(aes(elnet.pr[1900,]$recall,elnet.pr[1900,]$precision, colour = 'red'))
+
 
 ```
 
 ### Tuning Parameters
 
+Elastic net has two tuning pararmeters, alpha and lambda. !!!!!!!!!!!!!!!!!!!!!
+
 **NOTE: PART II same as above plus add Random Forest and SVM to Model Training.**
 
 ## Threshold Selection
 
+Up until this point we have evaluate models broadly but have not selected any thresholds. Threshold selection requires us to make some assumptions. Because we have limited information about the resources to handle these supply deliveries and rescues, or the priorities of the vulnerable people or the helpers on the ground, we will have to make assumptions on our own and recognize that with information from people closer to the situation, these assumptions will change.
+
+My hope is that this disaster received enough worldwide support that resources are abundant and that the key limiting factor from delivering help is a lack of information. With this assumption in place, we will target a lower threshold that will lean toward classifying pixels as blue tarp pixels when in doubt. In other words we are trying to be as efficient as possible with a no person left behind approach. This means that we will shoot for the highest possible true positive rate and the highest recall and sensitivity as our first priority, while maximizing precision and selectivity under these conditions.
+
+To achieve this, I performed the same task for each model. On the ROC data, I filtered for a sesitivity of 1 (the maximum value), and then selected the threshold with the highest specificity from the list. For the precision, recall data, I filtered by a recall of 1 and then selected the threshold for the highest precision from the list.
+
+Finally, from each model I compared the threshold calculated by the ROC data and the precision recall data and selected the better fit.
 
 # Results (Cross-Validation)
 
-** CV Performance Table Here**
+CV Performance Table based on the threshold obtained using the ROC Curve
 
+```{r echo = FALSE, results='asis'}
+library(knitr)
+
+# calculate accuracy
+getAcc <- function(prob, tr, actual){
+  ind <- which(prob > tr)
+  predBlue <- actual[ind]
+  truePos <- table(predBlue)["Blue Tarp"]
+  predOther <- actual[-ind]
+  trueNeg <- table(predBlue)["Other"]
+  acc <- (truePos + trueNeg)/length(actual)
+  acc
+}
+
+logistic.acc <- getAcc(logistic.pred$prediction,logistic.thresh$.threshold,logistic.pred$actual)
+lda.acc <- getAcc(lda.pred$prediction,lda.thresh$.threshold,lda.pred$actual)
+qda.acc <- getAcc(qda.pred$prediction,qda.thresh$.threshold,qda.pred$actual)
+knn.acc <- getAcc(data.knn$prediction,knn.thresh$.threshold,data.knn$Class.cl)
+elnet.acc <- getAcc(data.elnet$prediction,elnet.thresh$.threshold,data.elnet$Class.cl)
+
+# calculate TPR
+# condPos <- data.kfold %>% filter(Class.cl == "Blue Tarp") %>% count()
+condNeg <- data.kfold %>% filter(Class.cl == "Other") %>% count()
+getFPR <- function(prob, tr, actual){
+  ind <- which(prob > tr)
+  predBlue <- actual[ind]
+  falsePos <- table(predBlue)["Other"]
+  falsePosRate <- falsePos/condNeg
+  falsePosRate$n
+}
+
+logistic.FPR <- getFPR(logistic.pred$prediction,logistic.thresh$.threshold,logistic.pred$actual)
+lda.FPR <- getFPR(lda.pred$prediction,lda.thresh$.threshold,lda.pred$actual)
+qda.FPR <- getFPR(qda.pred$prediction,qda.thresh$.threshold,qda.pred$actual)
+knn.FPR <- getFPR(data.knn$prediction,knn.thresh$.threshold,data.knn$Class.cl)
+elnet.FPR <- getFPR(data.elnet$prediction,elnet.thresh$.threshold,data.elnet$Class.cl)
+
+# pull precision for ROC threshold from PR table
+logistic.Prec.ROC <- logistic.pr %>% filter(.threshold == logistic.thresh$.threshold)
+lda.Prec.ROC <- lda.pr %>% filter(.threshold == lda.thresh$.threshold)
+qda.Prec.ROC <- qda.pr %>% filter(.threshold == qda.thresh$.threshold)
+knn.Prec.ROC <- knn.pr %>% filter(.threshold == knn.thresh$.threshold)
+elnet.Prec.ROC <- elnet.pr %>% filter(.threshold == elnet.thresh$.threshold)
+
+df <- data.frame(
+  Model=c("Logistic Reg","LDA","QDA","KNN","Elastic Net"),
+  Tuning=c(NA,NA,NA,paste("k: ",knn.fit$results[1,1]),paste("alpha: ",elnet.fit$results[1,1],"lambda: ",elnet.fit$results[1,2])),
+  AUROC=c(logistic.auc$.estimate,lda.auc$.estimate,qda.auc$.estimate,knn.auc$.estimate,elnet.auc$.estimate),
+  Threshold=c(logistic.thresh$.threshold,lda.thresh$.threshold,qda.thresh$.threshold,knn.thresh$.threshold,elnet.thresh$.threshold),
+  Accuracy=c(logistic.acc,lda.acc,qda.acc,knn.acc,elnet.acc), 
+  TPR=c(logistic.thresh$sensitivity,lda.thresh$sensitivity,qda.thresh$sensitivity,knn.thresh$sensitivity,elnet.thresh$sensitivity),
+  FPR=c(logistic.FPR,lda.FPR,qda.FPR,knn.FPR,elnet.FPR),
+  Precision=c(logistic.Prec.ROC$precision,lda.Prec.ROC$precision,qda.Prec.ROC$precision,knn.Prec.ROC$precision,elnet.Prec.ROC$precision)
+)
+kable(df)
+
+```
+
+CV Performance Table using the threshold obtained through the Precision Recall curve
+
+```{r echo = FALSE, results='asis'}
+
+# logistic.TPR.pr <- logistic.roc %>% filter(.threshold == logistic.thresh.pr$.threshold)
+# lda.TPR.pr <- lda.roc %>% filter(.threshold == lda.thresh.pr$.threshold)
+# qda.TPR.pr <- qda.roc %>% filter(.threshold == qda.thresh.pr$.threshold)
+# knn.TPR.pr <- knn.roc %>% filter(.threshold == knn.thresh.pr$.threshold)
+# elnet.TPR.pr <- elnet.roc %>% filter(.threshold == elnet.thresh.pr$.threshold)
+
+
+# estimate acc
+logistic.acc.pr <- getAcc(logistic.pred$prediction,logistic.thresh.pr$.threshold,logistic.pred$actual)
+lda.acc.pr <- getAcc(lda.pred$prediction,lda.thresh.pr$.threshold,lda.pred$actual)
+qda.acc.pr <- getAcc(qda.pred$prediction,qda.thresh.pr.hp$.threshold,qda.pred$actual)
+knn.acc.pr <- getAcc(data.knn$prediction,knn.thresh.pr$.threshold,data.knn$Class.cl)
+elnet.acc.pr <- getAcc(data.elnet$prediction,elnet.thresh.pr.hp$.threshold,data.elnet$Class.cl)
+
+# estimate FPR
+logistic.FPR.pr <- getFPR(logistic.pred$prediction,logistic.thresh.pr$.threshold,logistic.pred$actual)
+lda.FPR.pr <- getFPR(lda.pred$prediction,lda.thresh.pr$.threshold,lda.pred$actual)
+qda.FPR.pr <- getFPR(qda.pred$prediction,qda.thresh.pr.hp$.threshold,qda.pred$actual)
+knn.FPR.pr <- getFPR(data.knn$prediction,knn.thresh.pr$.threshold,data.knn$Class.cl)
+elnet.FPR.pr <- getFPR(data.elnet$prediction,elnet.thresh.pr.hp$.threshold,data.elnet$Class.cl)
+
+# note: elnet and qda have handpicked thresholds
+df2 <- data.frame(
+  Model=c("Logistic Reg","LDA","QDA","KNN","Elastic Net"),
+  Threshold=c(logistic.thresh.pr$.threshold,lda.thresh.pr$.threshold,qda.thresh.pr.hp$.threshold,knn.thresh.pr$.threshold,elnet.thresh.pr.hp$.threshold),
+  Accuracy=c(NA,NA,NA,knn.fit$results[1,2],elnet.fit$results[1,3]), ##########
+  TPR=c(logistic.thresh.pr$recall,lda.thresh.pr$recall,qda.thresh.pr.hp$recall,knn.thresh.pr$recall,elnet.thresh.pr.hp$recall),
+  FPR=c(logistic.FPR.pr,lda.FPR.pr,qda.FPR.pr,knn.FPR.pr,elnet.FPR.pr), 
+  Precision=c(logistic.thresh.pr$precision,lda.thresh.pr$precision,qda.thresh.pr$precision,knn.thresh.pr$precision,elnet.thresh.pr$precision)
+)
+
+kable(df2)
+```
 
 # Conclusions
 
-### Conclusion \#1 
+### Conclusion \#1 - Model Selection
 
-??????? Why does QDA outperform LDA but not Logistic (is logstic performing well or QDA?)
+In selecting this model I want to emphasize the weakness of our assumptions. For this model we selected a threshold assuming unlimited resources. In practice, I recommend starting with this model and the blue tarp predictions it gives initially. If this number of blue tarps is unfeasible for the amount of resources you have, increase the threshold so that there are fewer blue tarps predicted so that they can be investigated and supported with the resources you have. This will reduce the chances that resources are wasted on false positives, while ensuring that the higest number of true positives are served.
+
+Finally, I encourage users of this model to decide ahead of time what percentage of resources will be allocated by this model and which will be allocated using more traditional means of information gathering. No model is perfect and should not be treated as such. Allocating resources to the data provided by this model ahead of analysing model output will prevent the instinct to chase false positives.
 
 ### Conclusion \#2
+
+??????? Why does QDA outperform LDA but not Logistic (is logstic performing well or QDA?)
 
 ### Conclusion \#3
 
