@@ -25,3 +25,5 @@ workflows
 yardstick
 Matrix
 glmnet
+e1071
+knitr
