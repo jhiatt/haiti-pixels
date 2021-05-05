@@ -68,6 +68,7 @@ library(caret)
 library(MASS)
 library(purrr)
 library(e1071)
+library(dplyr)
 ```
 
 # Model Training
@@ -919,7 +920,7 @@ For two of the models, Elastic Net and QDA, the thresholds given by my computati
 
 CV Performance Table based on the threshold obtained using the ROC Curve
 
-```{r echo = FALSE, results='asis'}
+```{r echo = FALSE, eval=FALSE, results='asis'}
 library(knitr)
 
 # calculate accuracy
@@ -985,6 +986,16 @@ df <- data.frame(
 )
 kable(df)
 
+
+# model_names <- c["Logisitic","LDA","QDA","KNN","Elastic Net","Random Forest","SVM Linear","SVM Radial"]
+# model_types <- c["logistic","lda","qda","knn","elnet","rf","svm.linear","svm.radial"]
+# 
+# cv_results <- for(i in 1:length(model_types)){
+#   thresh <- logistic.thresh$.threshold,
+#   eval(parse(text = paste0(model_types[i],".thresh$.threshold", sep=''))) #https://stackoverflow.com/questions/9057006/getting-strings-recognized-as-variable-names-in-r
+#   logistic.pred$prediction,logistic.pred$actual
+#   evaluate_model(model_names[i],)
+# }
 ```
 
 CV Performance Table using the threshold obtained through the Precision Recall curve
@@ -1038,27 +1049,86 @@ Both of these tables are filled in with a mix of metrics calculated in the model
 
 Threshold values represented in both of these charts are extremely small. This is confusing to me because my understanding was that the data was relieved by the roc_curve and pr_curve functions in a manner where a high probability would be designated a blue tarp. I followed this assumption in calculating accuracy and FPR. It could be that I have misunderstood how to interpret these thresholds, or that the packages used to calculate them treat the data differently then I am assuming. If this is the case, accuracy and FPR could be inaccurate in these tables. When I treid to adjust my calculations the results didn't make sense so I have kept my origional calculations for accuracy and FPR.
 
-```{r}
-evaluate_model <- function(thr, probability, actual){
+```{r model-evaluation}
+evaluate_model <- function(type, tr, prob, actual){
+  # tr: threshold, prob: probability, type is model type (for label)
   # probability must be probability that target class is true (class 1 should have a probability close to 1)
+  # index for probability and actual must match
+  
   ind <- which(prob > tr)
   predBlue <- actual[ind] # predict true
   predOther <- actual[-ind] # predict false
-    
-}
-
-evaluate_model(lda.thresh$.threshold,lda.pred$prediction,lda.pred$actual)
-
-
-getAcc <- function(prob, tr, actual){
-  ind <- which(prob > tr)
-  predBlue <- actual[ind]
+  
+  # true postitive
   truePos <- table(predBlue)['BlueTarp']
-  predOther <- actual[-ind]
-  trueNeg <- table(predBlue)["Other"]
+  
+  # false postive
+  falsePos <- table(predBlue)['Other']
+  
+  # true negative
+  trueNeg <- table(predOther)['Other']
+  
+  # false negative
+  falseNeg <- table(predOther)['BlueTarp']
+  
+  # Accuracy
   acc <- (truePos + trueNeg)/length(actual)
-  acc
+  
+  # True Positive Rate
+  tpr <- truePos/table(actual)['BlueTarp']
+  
+  # False Positive Rate
+  fpr <- falsePos/table(actual)['Other']
+  
+  # Precision
+  prec <- truePos/length(predBlue)
+  
+  return(data.frame(row.names = type,"Model"=type,"Threshold"=tr,"TruePositive"= truePos, "FalsePositive"=falsePos, 
+                    "TrueNegative" = trueNeg, "FalseNegative" = falseNeg,
+                    "Accuracy" = acc, "TPR" = tpr, "FPR" = fpr, "Precision" = prec))
 }
+
+
+df1 <- evaluate_model("Logisitic",logistic.thresh$.threshold,logistic.pred$prediction,logistic.pred$actual)
+df2 <- evaluate_model("LDA",lda.thresh$.threshold,lda.pred$prediction,lda.pred$actual)
+df3 <- evaluate_model("QDA",qda.thresh$.threshold,qda.pred$prediction,qda.pred$actual)
+df4 <- evaluate_model("KNN",knn.thresh$.threshold,knn.pred$prediction,knn.pred$actual)
+df5 <- evaluate_model("Elastic Net",elnet.thresh$.threshold,elnet.pred$prediction,elnet.pred$actual)
+df6 <- evaluate_model("Random Forest",rf.thresh$.threshold,rf.pred$prediction,rf.pred$actual)
+df7 <- evaluate_model("SVM Linear",svm.linear.thresh$.threshold,svm.linear.pred$prediction,svm.linear.pred$actual)
+df8 <- evaluate_model("SVM Radial",svm.radial.thresh$.threshold,svm.radial.pred$prediction,svm.radial.pred$actual)
+
+cv_results <- rbind(df1, df2, df3, df4, df5, df6, df7, df8)
+cv_results
+cv_results <- cv_results %>% mutate(Tuning = "", AUROC = 0) %>% column_to_rownames(var = "Model")
+
+model_types <- list("logistic","lda","qda","knn","elnet","rf","svm.linear","svm.radial")
+models <- row.names(cv_results)
+for(i in 1:length(models)){
+  st <- paste0(model_types[i],".auc$.estimate", sep='')
+  auc <- eval(parse(text = st))
+  cv_results[models[i],]$AUROC <- auc
+}
+
+cv_results["KNN",]$Tuning <- paste("k: ",knn.fit$results[1,1])
+cv_results["Elastic Net",]$Tuning <- paste("alpha: ",
+                    elnet.fit$results[1,1],"lambda: ",elnet.fit$results[1,2])
+# cv_results <- cv_results %>% rowid_to_column()
+cv_results <- cv_results %>% dplyr::select(Tuning, AUROC, Threshold, Accuracy, TPR, FPR, Precision)
+
+
+# update thresholds for custom picked thresholds
+# copy for PR thresholds
+# Ensure all thresholds are fixed.
+# add tuning for rf and svm
+# check table results
+
+# get actual and prediction values for holdout data
+# copy and paste these with that data
+# remove output from this table
+```
+```{r, echo=FALSE, results="asis"}
+kable(cv_results)
 ```
 
 # Conclusions
