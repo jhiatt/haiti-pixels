@@ -240,13 +240,19 @@ for (i in 1:10) {
   logistic.pred<-full_join(logistic.pred, cross_val(i))
 }
 
+# for predicting hodlout data
+logistic.fit.final <- logistic.fit <- glm(Class.cl~Red+Green+Blue,family = binomial, 
+                      data = data.kfold)
+
 # calculate the ROC and AUC
 library(tidymodels)
 # https://yardstick.tidymodels.org/reference/roc_curve.html
 logistic.roc <- logistic.pred %>% roc_curve(actual,prediction, event_level="second")
-logistic.roc
+logistic.roc %>% head(5)
 logistic.auc <- logistic.pred %>% roc_auc(actual,prediction, event_level="second")
 logistic.auc
+
+
 
 # calculate ideal threshold from ROC
 logistic.roc <- logistic.roc %>% rowid_to_column()
@@ -260,7 +266,7 @@ logistic.roc %>% ggplot(aes(x = 1 - specificity, y = sensitivity)) +
 
 # calculate the Precision Recall curve and AUC
 logistic.pr <- logistic.pred %>% pr_curve(actual,prediction, event_level="second")
-logistic.pr
+logistic.pr %>% head(5)
 logistic.pr_auc <- logistic.pred %>% pr_auc(actual,prediction, event_level="second")
 logistic.pr_auc
 
@@ -268,7 +274,7 @@ logistic.pr_auc
 logistic.pr <- logistic.pr %>% rowid_to_column()
 logistic.thresh.pr <- logistic.pr %>% filter(recall == 1) %>% 
   arrange(desc(precision)) %>% head(1)
-logistic.thresh.pr.hp <- qda.pr[2000,]
+logistic.thresh.pr.hp <- logistic.pr[2000,]
 
 # Plot the Precision Recall curve
 # Needed some help expanding my graph vertically for readability:
@@ -293,7 +299,7 @@ Because we have such a small fraction of Blue Tarp data, I am concerned that the
 
 Precision recall show the true positives as a percentage of total positives (recall), versus the true positives as a percentage of all predicted positives (precision). The precision recall also has a very strong AUC, actually stronger than the ROC curve. The curve, as plotted does not have a precision level below 0.95, which is confirmed by the data. The plot suggests that the model is very accurate under most thresholds we capture all true positives and the false positives are not a large proportion.
 
-On both of the plotted curves, I have calculated and placed the ideal threshold value.  See the threshold section below for information on the calculation.
+On both of the plotted curves, I have calculated and placed the ideal threshold value.  However, the precision recall curve gave an optimal threshold (based on my criteria) that fell to extremely in favor of recall, sacrificing precision. In the spirit of my criteria I eased the rules and hand picked a value that prioritized recall, but has a reasonable precision value. See the threshold section below for information on the calculation.
 
 ## LDA
 ```{r lda, cache=TRUE}
@@ -317,11 +323,14 @@ for (i in 1:10) {
   lda.pred<-full_join(lda.pred, lda.cross_val(i))
 }
 
+# for holdout data
+lda.fit.final <- lda(Class.cl~Red+Green+Blue, data = data.kfold)
+
 # https://yardstick.tidymodels.org/reference/roc_curve.html
 # calculate ROC
 # we need to specify that we are predicting the second variable
 lda.roc <- lda.pred %>% roc_curve(actual,prediction, event_level='second') 
-lda.roc
+lda.roc %>% head(5)
 lda.auc <- lda.pred %>% roc_auc(actual,prediction, event_level='second')
 lda.auc
 
@@ -337,7 +346,7 @@ lda.roc %>% ggplot(aes(x = 1 - specificity, y = sensitivity)) +
 
 # calculate PR
 lda.pr <- lda.pred %>% pr_curve(actual,prediction, event_level='second')
-lda.pr
+lda.pr %>% head(5)
 lda.pr_auc <- lda.pred %>% pr_auc(actual,prediction, event_level='second')
 lda.pr_auc
 
@@ -374,10 +383,13 @@ for (i in 1:10) {
   qda.pred<-full_join(qda.pred, qda.cross_val(i))
 }
 
+# for holdout data
+qda.fit.final <- qda(Class.cl~Red+Green+Blue, data = data.kfold)
+
 # https://yardstick.tidymodels.org/reference/roc_curve.html
 # calculate ROC
 qda.roc <- qda.pred %>% roc_curve(actual,prediction, event_level='second')
-qda.roc
+qda.roc %>% head(5)
 qda.auc <- qda.pred %>% roc_auc(actual,prediction, event_level='second')
 qda.auc
 
@@ -393,7 +405,7 @@ qda.roc %>% ggplot(aes(x = 1 - specificity, y = sensitivity)) +
 
 # calculate PR
 qda.pr <- qda.pred %>% pr_curve(actual,prediction, event_level='second')
-qda.pr
+qda.pr %>% head(5)
 qda.pr_auc <- qda.pred %>% pr_auc(actual,prediction, event_level='second')
 qda.pr_auc
 
@@ -413,7 +425,7 @@ qda.pr %>% ggplot(aes(x = recall, y = precision)) +
 
 The calculation of QDA is almost identical to LDA. The ROC results are closer to Logistic regression with only a slightly lower AUC.  The precision recall out performs LDA but is behind Logistic regression. Because precision recall and ROC appear significantly different, we will give preference to precision recall as stated above.
 
-One major difference with the precision recal curve is that the process I used to select the ideal threshold gives us a value with very small precision. I also selected another point in red that appeared to be better positioned. This point was hand picked by selecting a point that appear to be in an ideal position visually.
+One major difference with the precision recall curve is that the process I used to select the ideal threshold gives us a value with very small precision. As with Logistic regression, I hand picked another point in red that appeared to be better positioned based on visual inspection.
 
 ## KNN
 ```{r, knn, cache=TRUE}
@@ -444,7 +456,6 @@ knn.cross_val <- function(kfold) {
   holdout <- filter(data.kfold, fold == kfold)
   predictions <- knn.fit.tuned %>% predict(holdout, 'prob')
   # return actual, then predictions
-  # data returned from predictions is similar to LDA
   return(data_frame(fold=i,actual=holdout$Class.cl,
                     prediction=1-predictions$BlueTarp))
 }
@@ -455,9 +466,15 @@ for (i in 1:10) {
   knn.pred<-full_join(knn.pred, knn.cross_val(i))
 }
 
+# for holdout data
+ctl.none <- trainControl(method = "none")
+knn.fit.final <- caret::train(Class.cl~Red+Green+Blue, data = data.kfold, 
+                        method = 'knn', trControl = ctl.none, 
+                        tuneGrid = knn.fit$bestTune)
+
 # calculate ROC
 knn.roc <- knn.pred %>% roc_curve(actual,prediction)
-knn.roc
+knn.roc %>% head(5)
 knn.auc <- knn.pred %>% roc_auc(actual,prediction)
 knn.auc
 
@@ -465,15 +482,19 @@ knn.auc
 knn.roc <- knn.roc %>% rowid_to_column()
 knn.thresh <- knn.roc %>% filter(sensitivity == 1) %>% 
   arrange(desc(specificity)) %>% head(1)
+knn.thresh.hp <- knn.roc[24,]
+
 
 # plot ROC
 knn.roc %>% ggplot(aes(x = 1 - specificity, y = sensitivity)) +
   geom_path() + geom_abline(lty=3) + coord_equal() +
-  geom_point(aes(1-knn.thresh$specificity,knn.thresh$sensitivity))
+  geom_point(aes(1-knn.thresh$specificity,knn.thresh$sensitivity)) +
+    geom_point(aes(1-knn.roc[24,]$specificity,knn.roc[24,]$sensitivity, colour = 'red'))
+
 
 # calculate PR
 knn.pr <- knn.pred %>% pr_curve(actual,prediction) # use caret package to get optimal tuning parameter, (k=5), new function for the folds 
-knn.pr
+knn.pr %>% head(5)
 knn.pr_auc <- knn.pred %>% pr_auc(actual,prediction)
 knn.pr_auc
 
@@ -487,10 +508,11 @@ knn.pr %>% ggplot(aes(x = recall, y = precision)) +
   geom_path() + coord_equal() + 
   scale_y_continuous(expand = c(0, 0), limits = c(.00,1.05)) +
   geom_point(aes(knn.thresh.pr$recall,knn.thresh.pr$precision))
-
 ```
 
 For KNN we used the Caret package. Caret gives us a lot of flexibility and allows us to pass in our current folds so that we can compare this model with the others. The ROC curve and precision recall curve appears to outperform even logistic regression.
+
+Again we selected a handpicked threshold point, this time for the ROC curve.  The results for KNN seem more polarized than for logistic regression, which may indicate overtraining.
 
 ### Tuning Parameter $k$
 
@@ -544,6 +566,11 @@ for (i in 1:10) {
   elnet.pred<-full_join(elnet.pred, elnet.cross_val(i))
 }
 
+# for holdout data
+ctl.none <- trainControl(method = "none")
+elnet.fit.final <- caret::train(Class.cl~Red+Green+Blue, data=data.kfold,
+                        method="glmnet", trControl=ctl.none, tuneGrid=elnet.fit$bestTune)
+
 # calculate ROC
 elnet.roc <- elnet.pred %>% roc_curve(actual,prediction)
 elnet.roc
@@ -571,20 +598,17 @@ elnet.pr_auc
 elnet.pr <- elnet.pr %>% rowid_to_column()
 elnet.thresh.pr <- elnet.pr %>% filter(recall == 1) %>% 
   arrange(desc(precision)) %>% head(1)
-elnet.thresh.pr.hp <- elnet.pr[1900,]
 
 # plot PR
 elnet.pr %>% ggplot(aes(x = recall, y = precision)) +
   geom_path() + coord_equal() +
   scale_y_continuous(expand = c(0, 0), limits = c(.00,1.05)) +
-  geom_point(aes(elnet.thresh.pr$recall,elnet.thresh.pr$precision)) +
-  geom_point(aes(elnet.pr[1900,]$recall,
-                 elnet.pr[1900,]$precision, colour = 'red'))
+  geom_point(aes(elnet.thresh.pr$recall,elnet.thresh.pr$precision))
 
 
 ```
 
-Elastic Net again uses the Caret package and the results appear very strong.  Like QDA, the threshold from the precision recall curve was very low on the plot so I hand picked a value in a position that appeared to be a better balance.
+Elastic Net again uses the Caret package and the results appear very strong.  
 
 ### Tuning Parameters
 
@@ -680,17 +704,16 @@ rf.cross_val <- function(kfold) {
   
   rf.fit.tuned <- caret::train(Class.cl~Red+Green+Blue+(Red*Green)+(Red*Blue)+(Green*Blue)+
                         (Red*Green*Blue)+I(Red^2)+I(Green^2)+I(Blue^2),
-                        ntree=rf.tune.top[1,6], #double check tune rf.tune.top
+                        ntree=rf.tune.top[1,6], 
                         data=data.kfold, subset=fold!=kfold, method="rf",
                         trControl=ctl.none,
-                        tuneGrid=data.frame(mtry=rf.tune.top[1,1])) #double check tune rf.tune.top
+                        tuneGrid=data.frame(mtry=rf.tune.top[1,1])) 
   
   holdout <- filter(data.kfold, fold == kfold)
   predictions <- rf.fit.tuned %>% predict(holdout, 'prob')
   # return actual, then predictions
-  # data returned from predictions is similar to LDA
   return(data_frame(fold=i,actual=holdout$Class.cl,
-                    prediction=1-predictions$BlueTarp)) # double check this
+                    prediction=1-predictions$BlueTarp)) 
 }
 
 # calculate predictions on data using best model
@@ -698,6 +721,15 @@ rf.pred <- data_frame(fold=numeric(),actual=factor(),prediction=numeric())
 for (i in 1:10) {
   rf.pred<-full_join(rf.pred, rf.cross_val(i))
 }
+
+# for holdout data
+ctl.none <- trainControl(method = "none")
+rf.fit.final <- caret::train(Class.cl~Red+Green+Blue+(Red*Green)+(Red*Blue)+(Green*Blue)+
+                        (Red*Green*Blue)+I(Red^2)+I(Green^2)+I(Blue^2),
+                        ntree=rf.tune.top[1,6],
+                        data=data.kfold, method="rf",
+                        trControl=ctl.none,
+                        tuneGrid=data.frame(mtry=rf.tune.top[1,1]))
 
 # calculate ROC
 rf.roc <- rf.pred %>% roc_curve(actual,prediction)
@@ -709,12 +741,15 @@ rf.auc
 rf.roc <- rf.roc %>% rowid_to_column()
 rf.thresh <- rf.roc %>% filter(sensitivity == 1) %>% 
   arrange(desc(specificity)) %>% head(1)
+rf.thresh.hp <- rf.roc[7,]
 
 # plot ROC
 rf.roc %>% ggplot(aes(x = 1 - specificity, y = sensitivity)) +
   geom_path() + geom_abline(lty=3) + coord_equal() +
   #scale_y_continuous(expand = c(0, 0), limits = c(.00,1.05)) +
-  geom_point(aes(1-rf.thresh$specificity,rf.thresh$sensitivity))
+  geom_point(aes(1-rf.thresh$specificity,rf.thresh$sensitivity)) +
+  geom_point(aes(1-rf.roc[7,]$specificity,
+                 rf.roc[7,]$sensitivity, colour = 'red'))
 
 # calculate PR
 rf.pr <- rf.pred %>% pr_curve(actual,prediction)
@@ -726,15 +761,12 @@ rf.pr_auc
 rf.pr <- rf.pr %>% rowid_to_column()
 rf.thresh.pr <- rf.pr %>% filter(recall == 1) %>% 
   arrange(desc(precision)) %>% head(1)
-rf.thresh.pr.hp <- rf.pr[1900,]
 
 # plot PR
 rf.pr %>% ggplot(aes(x = recall, y = precision)) +
   geom_path() + coord_equal() +
   scale_y_continuous(expand = c(0, 0), limits = c(.00,1.05)) +
-  geom_point(aes(rf.thresh.pr$recall,rf.thresh.pr$precision)) #+
-  #geom_point(aes(rf.pr[1900,]$recall,
-  #               rf.pr[1900,]$precision, colour = 'red'))
+  geom_point(aes(rf.thresh.pr$recall,rf.thresh.pr$precision)) 
 
 
 ```
@@ -769,7 +801,6 @@ svm.linear.cross_val <- function(kfold) {
   holdout <- filter(data.kfold, fold == kfold)
   predictions <- svm.linear.fit.tuned %>% predict(holdout, probability=TRUE)
   # return actual, then predictions
-  # data returned from predictions is similar to LDA
   return(data_frame(fold=i,actual=holdout$Class.cl,
                     prediction=1-attr(predictions,"probabilities")[,2])) # thanks https://stackoverflow.com/questions/27561491/how-to-access-the-atomic-vector-attributes
 }
@@ -779,6 +810,10 @@ svm.linear.pred <- data_frame(fold=numeric(),actual=factor(),prediction=numeric(
 for (i in 1:10) {
   svm.linear.pred<-full_join(svm.linear.pred, svm.linear.cross_val(i))
 }
+
+# for holdout
+svm.linear.fit.final <- svm(Class.cl~Red+Green+Blue, data = data.kfold, 
+              cost="9", kernel="linear", probability = TRUE)
 
 # calculate ROC
 svm.linear.roc <- svm.linear.pred %>% roc_curve(actual,prediction)
@@ -807,15 +842,13 @@ svm.linear.pr_auc
 svm.linear.pr <- svm.linear.pr %>% rowid_to_column()
 svm.linear.thresh.pr <- svm.linear.pr %>% filter(recall == 1) %>% 
   arrange(desc(precision)) %>% head(1)
-svm.linear.thresh.pr.hp <- svm.linear.pr[1900,]
+
 
 # plot PR
 svm.linear.pr %>% ggplot(aes(x = recall, y = precision)) +
   geom_path() + coord_equal() +
   scale_y_continuous(expand = c(0, 0), limits = c(.00,1.05)) +
-  geom_point(aes(svm.linear.thresh.pr$recall,svm.linear.thresh.pr$precision)) #+
-  #geom_point(aes(svm.linear.pr[1900,]$recall,
-  #               svm.linear.pr[1900,]$precision, colour = 'red'))
+  geom_point(aes(svm.linear.thresh.pr$recall,svm.linear.thresh.pr$precision))
 
 
 ```
@@ -844,7 +877,6 @@ svm.radial.cross_val <- function(kfold) {
   holdout <- filter(data.kfold, fold == kfold)
   predictions <- svm.radial.fit.tuned %>% predict(holdout, probability=TRUE)
   # return actual, then predictions
-  # data returned from predictions is similar to LDA
   return(data_frame(fold=i,actual=holdout$Class.cl,
                     prediction=1-attr(predictions,"probabilities")[,2])) # thanks https://stackoverflow.com/questions/27561491/how-to-access-the-atomic-vector-attributes
 }
@@ -854,6 +886,11 @@ svm.radial.pred <- data_frame(fold=numeric(),actual=factor(),prediction=numeric(
 for (i in 1:10) {
   svm.radial.pred<-full_join(svm.radial.pred, svm.radial.cross_val(i))
 }
+
+# for holdout data
+svm.radial.fit.final <- svm(Class.cl~Red+Green+Blue, data = data.kfold, 
+              cost="15", gamma="7", kernel="radial", probability = TRUE)
+
 
 # calculate ROC
 svm.radial.roc <- svm.radial.pred %>% roc_curve(actual,prediction)
@@ -882,15 +919,12 @@ svm.radial.pr_auc
 svm.radial.pr <- svm.radial.pr %>% rowid_to_column()
 svm.radial.thresh.pr <- svm.radial.pr %>% filter(recall == 1) %>% 
   arrange(desc(precision)) %>% head(1)
-svm.radial.thresh.pr.hp <- svm.radial.pr[1900,]
 
 # plot PR
 svm.radial.pr %>% ggplot(aes(x = recall, y = precision)) +
   geom_path() + coord_equal() +
   scale_y_continuous(expand = c(0, 0), limits = c(.00,1.05)) +
-  geom_point(aes(svm.radial.thresh.pr$recall,svm.radial.thresh.pr$precision)) #+
-  #geom_point(aes(svm.radial.pr[1900,]$recall,
-  #               svm.radial.pr[1900,]$precision, colour = 'red'))
+  geom_point(aes(svm.radial.thresh.pr$recall,svm.radial.thresh.pr$precision))
 
 
 ```
@@ -924,67 +958,67 @@ CV Performance Table based on the threshold obtained using the ROC Curve
 library(knitr)
 
 # calculate accuracy
-getAcc <- function(prob, tr, actual){
-  ind <- which(prob > tr)
-  predBlue <- actual[ind]
-  truePos <- table(predBlue)['BlueTarp']
-  predOther <- actual[-ind]
-  trueNeg <- table(predBlue)["Other"]
-  acc <- (truePos + trueNeg)/length(actual)
-  acc
-}
-
-logistic.acc <- getAcc(logistic.pred$prediction,
-                       logistic.thresh$.threshold,logistic.pred$actual)
-lda.acc <- getAcc(lda.pred$prediction,lda.thresh$.threshold,lda.pred$actual)
-qda.acc <- getAcc(qda.pred$prediction,qda.thresh$.threshold,qda.pred$actual)
-knn.acc <- getAcc(knn.pred$prediction,knn.thresh$.threshold,knn.pred$actual)
-elnet.acc <- getAcc(elnet.pred$prediction,
-                    elnet.thresh$.threshold,elnet.pred$Class.cl)
-
-# calculate TPR
-# condPos <- data.kfold %>% filter(Class.cl == 'BlueTarp') %>% count()
-condNeg <- data.kfold %>% filter(Class.cl == "Other") %>% count()
-getFPR <- function(prob, tr, actual){
-  ind <- which(prob > tr)
-  predBlue <- actual[ind]
-  falsePos <- table(predBlue)["Other"]
-  falsePosRate <- falsePos/condNeg
-  falsePosRate$n
-}
-
-logistic.FPR <- getFPR(logistic.pred$prediction,
-                       logistic.thresh$.threshold,logistic.pred$actual)
-lda.FPR <- getFPR(lda.pred$prediction,lda.thresh$.threshold,lda.pred$actual)
-qda.FPR <- getFPR(qda.pred$prediction,qda.thresh$.threshold,qda.pred$actual)
-knn.FPR <- getFPR(knn.pred$prediction,knn.thresh$.threshold,knn.pred$actual)
-elnet.FPR <- getFPR(elnet.pred$prediction,
-                    elnet.thresh$.threshold,elnet.pred$actual)
-
-# pull precision for ROC threshold from PR table
-logistic.Prec.ROC <- logistic.pr %>% filter(.threshold == 
-                                              logistic.thresh$.threshold)
-lda.Prec.ROC <- lda.pr %>% filter(.threshold == lda.thresh$.threshold)
-qda.Prec.ROC <- qda.pr %>% filter(.threshold == qda.thresh$.threshold)
-knn.Prec.ROC <- knn.pr %>% filter(.threshold == knn.thresh$.threshold) # shows inf for threshold
-elnet.Prec.ROC <- elnet.pr %>% filter(.threshold == elnet.thresh$.threshold)
-
-df <- data.frame(
-  Model=c("Logistic Reg","LDA","QDA","KNN","Elastic Net"),
-  Tuning=c(NA,NA,NA,paste("k: ",knn.fit$results[1,1]),paste("alpha: ",
-                    elnet.fit$results[1,1],"lambda: ",elnet.fit$results[1,2])),
-  AUROC=c(logistic.auc$.estimate,lda.auc$.estimate,qda.auc$.estimate,
-          knn.auc$.estimate,elnet.auc$.estimate),
-  Threshold=c(logistic.thresh$.threshold,lda.thresh$.threshold,
-          qda.thresh$.threshold,knn.thresh$.threshold,elnet.thresh$.threshold),
-  Accuracy=c(logistic.acc,lda.acc,qda.acc,knn.acc,elnet.acc),
-  TPR=c(logistic.thresh$sensitivity,lda.thresh$sensitivity,
-        qda.thresh$sensitivity,knn.thresh$sensitivity,elnet.thresh$sensitivity),
-  FPR=c(logistic.FPR,lda.FPR,qda.FPR,knn.FPR,elnet.FPR),
-  Precision=c(logistic.Prec.ROC$precision,lda.Prec.ROC$precision,
-        qda.Prec.ROC$precision,knn.Prec.ROC$precision,elnet.Prec.ROC$precision)
-)
-kable(df)
+# getAcc <- function(prob, tr, actual){
+#   ind <- which(prob > tr)
+#   predBlue <- actual[ind]
+#   truePos <- table(predBlue)['BlueTarp']
+#   predOther <- actual[-ind]
+#   trueNeg <- table(predBlue)["Other"]
+#   acc <- (truePos + trueNeg)/length(actual)
+#   acc
+# }
+# 
+# logistic.acc <- getAcc(logistic.pred$prediction,
+#                        logistic.thresh$.threshold,logistic.pred$actual)
+# lda.acc <- getAcc(lda.pred$prediction,lda.thresh$.threshold,lda.pred$actual)
+# qda.acc <- getAcc(qda.pred$prediction,qda.thresh$.threshold,qda.pred$actual)
+# knn.acc <- getAcc(knn.pred$prediction,knn.thresh$.threshold,knn.pred$actual)
+# elnet.acc <- getAcc(elnet.pred$prediction,
+#                     elnet.thresh$.threshold,elnet.pred$Class.cl)
+# 
+# # calculate TPR
+# # condPos <- data.kfold %>% filter(Class.cl == 'BlueTarp') %>% count()
+# condNeg <- data.kfold %>% filter(Class.cl == "Other") %>% count()
+# getFPR <- function(prob, tr, actual){
+#   ind <- which(prob > tr)
+#   predBlue <- actual[ind]
+#   falsePos <- table(predBlue)["Other"]
+#   falsePosRate <- falsePos/condNeg
+#   falsePosRate$n
+# }
+# 
+# logistic.FPR <- getFPR(logistic.pred$prediction,
+#                        logistic.thresh$.threshold,logistic.pred$actual)
+# lda.FPR <- getFPR(lda.pred$prediction,lda.thresh$.threshold,lda.pred$actual)
+# qda.FPR <- getFPR(qda.pred$prediction,qda.thresh$.threshold,qda.pred$actual)
+# knn.FPR <- getFPR(knn.pred$prediction,knn.thresh$.threshold,knn.pred$actual)
+# elnet.FPR <- getFPR(elnet.pred$prediction,
+#                     elnet.thresh$.threshold,elnet.pred$actual)
+# 
+# # pull precision for ROC threshold from PR table
+# logistic.Prec.ROC <- logistic.pr %>% filter(.threshold == 
+#                                               logistic.thresh$.threshold)
+# lda.Prec.ROC <- lda.pr %>% filter(.threshold == lda.thresh$.threshold)
+# qda.Prec.ROC <- qda.pr %>% filter(.threshold == qda.thresh$.threshold)
+# knn.Prec.ROC <- knn.pr %>% filter(.threshold == knn.thresh$.threshold) # shows inf for threshold
+# elnet.Prec.ROC <- elnet.pr %>% filter(.threshold == elnet.thresh$.threshold)
+# 
+# df <- data.frame(
+#   Model=c("Logistic Reg","LDA","QDA","KNN","Elastic Net"),
+#   Tuning=c(NA,NA,NA,paste("k: ",knn.fit$results[1,1]),paste("alpha: ",
+#                     elnet.fit$results[1,1],"lambda: ",elnet.fit$results[1,2])),
+#   AUROC=c(logistic.auc$.estimate,lda.auc$.estimate,qda.auc$.estimate,
+#           knn.auc$.estimate,elnet.auc$.estimate),
+#   Threshold=c(logistic.thresh$.threshold,lda.thresh$.threshold,
+#           qda.thresh$.threshold,knn.thresh$.threshold,elnet.thresh$.threshold),
+#   Accuracy=c(logistic.acc,lda.acc,qda.acc,knn.acc,elnet.acc),
+#   TPR=c(logistic.thresh$sensitivity,lda.thresh$sensitivity,
+#         qda.thresh$sensitivity,knn.thresh$sensitivity,elnet.thresh$sensitivity),
+#   FPR=c(logistic.FPR,lda.FPR,qda.FPR,knn.FPR,elnet.FPR),
+#   Precision=c(logistic.Prec.ROC$precision,lda.Prec.ROC$precision,
+#         qda.Prec.ROC$precision,knn.Prec.ROC$precision,elnet.Prec.ROC$precision)
+# )
+# kable(df)
 
 
 # model_names <- c["Logisitic","LDA","QDA","KNN","Elastic Net","Random Forest","SVM Linear","SVM Radial"]
@@ -998,58 +1032,55 @@ kable(df)
 # }
 ```
 
-CV Performance Table using the threshold obtained through the Precision Recall curve
 
-```{r echo = FALSE, results='asis'}
+```{r echo = FALSE, eval=FALSE, results='asis'}
 
-# estimate acc
-logistic.acc.pr <- getAcc(logistic.pred$prediction,logistic.thresh.pr$.threshold,
-                          logistic.pred$actual)
-lda.acc.pr <- getAcc(lda.pred$prediction,lda.thresh.pr$.threshold,lda.pred$actual)
-qda.acc.pr <- getAcc(qda.pred$prediction,
-                     qda.thresh.pr.hp$.threshold,qda.pred$actual)
-knn.acc.pr <- getAcc(data.knn$prediction,
-                     knn.thresh.pr$.threshold,data.knn$Class.cl)
-elnet.acc.pr <- getAcc(data.elnet$prediction,
-                       elnet.thresh.pr.hp$.threshold,data.elnet$Class.cl)
-
-# estimate FPR
-logistic.FPR.pr <- getFPR(logistic.pred$prediction,
-                          logistic.thresh.pr$.threshold,logistic.pred$actual)
-lda.FPR.pr <- getFPR(lda.pred$prediction,
-                     lda.thresh.pr$.threshold,lda.pred$actual)
-qda.FPR.pr <- getFPR(qda.pred$prediction,
-                     qda.thresh.pr.hp$.threshold,qda.pred$actual)
-knn.FPR.pr <- getFPR(data.knn$prediction,
-                     knn.thresh.pr$.threshold,data.knn$Class.cl)
-elnet.FPR.pr <- getFPR(data.elnet$prediction,
-                       elnet.thresh.pr.hp$.threshold,data.elnet$Class.cl)
-
-# note: elnet and qda have handpicked thresholds
-df2 <- data.frame(
-  Model=c("Logistic Reg","LDA","QDA","KNN","Elastic Net"),
-  AUCPR=c(logistic.pr_auc$.estimate,lda.pr_auc$.estimate,
-          qda.pr_auc$.estimate,knn.pr_auc$.estimate,elnet.pr_auc$.estimate),
-  Threshold=c(logistic.thresh.pr$.threshold,lda.thresh.pr$.threshold,
-      qda.thresh.pr.hp$.threshold,knn.thresh.pr$.threshold,
-      elnet.thresh.pr.hp$.threshold),
-  Accuracy=c(logistic.acc.pr,lda.acc.pr,qda.acc.pr,knn.acc.pr,elnet.acc.pr),
-  TPR=c(logistic.thresh.pr$recall,lda.thresh.pr$recall,
-        qda.thresh.pr.hp$recall,knn.thresh.pr$recall,elnet.thresh.pr.hp$recall),
-  FPR=c(logistic.FPR.pr,lda.FPR.pr,qda.FPR.pr,knn.FPR.pr,elnet.FPR.pr), 
-  Precision=c(logistic.thresh.pr$precision,lda.thresh.pr$precision,
-      qda.thresh.pr$precision,knn.thresh.pr$precision,elnet.thresh.pr$precision)
-)
-
-kable(df2)
+# # estimate acc
+# logistic.acc.pr <- getAcc(logistic.pred$prediction,logistic.thresh.pr$.threshold,
+#                           logistic.pred$actual)
+# lda.acc.pr <- getAcc(lda.pred$prediction,lda.thresh.pr$.threshold,lda.pred$actual)
+# qda.acc.pr <- getAcc(qda.pred$prediction,
+#                      qda.thresh.pr.hp$.threshold,qda.pred$actual)
+# knn.acc.pr <- getAcc(data.knn$prediction,
+#                      knn.thresh.pr$.threshold,data.knn$Class.cl)
+# elnet.acc.pr <- getAcc(data.elnet$prediction,
+#                        elnet.thresh.pr.hp$.threshold,data.elnet$Class.cl)
+# 
+# # estimate FPR
+# logistic.FPR.pr <- getFPR(logistic.pred$prediction,
+#                           logistic.thresh.pr$.threshold,logistic.pred$actual)
+# lda.FPR.pr <- getFPR(lda.pred$prediction,
+#                      lda.thresh.pr$.threshold,lda.pred$actual)
+# qda.FPR.pr <- getFPR(qda.pred$prediction,
+#                      qda.thresh.pr.hp$.threshold,qda.pred$actual)
+# knn.FPR.pr <- getFPR(data.knn$prediction,
+#                      knn.thresh.pr$.threshold,data.knn$Class.cl)
+# elnet.FPR.pr <- getFPR(data.elnet$prediction,
+#                        elnet.thresh.pr.hp$.threshold,data.elnet$Class.cl)
+# 
+# # note: elnet and qda have handpicked thresholds
+# df2 <- data.frame(
+#   Model=c("Logistic Reg","LDA","QDA","KNN","Elastic Net"),
+#   AUCPR=c(logistic.pr_auc$.estimate,lda.pr_auc$.estimate,
+#           qda.pr_auc$.estimate,knn.pr_auc$.estimate,elnet.pr_auc$.estimate),
+#   Threshold=c(logistic.thresh.pr$.threshold,lda.thresh.pr$.threshold,
+#       qda.thresh.pr.hp$.threshold,knn.thresh.pr$.threshold,
+#       elnet.thresh.pr.hp$.threshold),
+#   Accuracy=c(logistic.acc.pr,lda.acc.pr,qda.acc.pr,knn.acc.pr,elnet.acc.pr),
+#   TPR=c(logistic.thresh.pr$recall,lda.thresh.pr$recall,
+#         qda.thresh.pr.hp$recall,knn.thresh.pr$recall,elnet.thresh.pr.hp$recall),
+#   FPR=c(logistic.FPR.pr,lda.FPR.pr,qda.FPR.pr,knn.FPR.pr,elnet.FPR.pr), 
+#   Precision=c(logistic.thresh.pr$precision,lda.thresh.pr$precision,
+#       qda.thresh.pr$precision,knn.thresh.pr$precision,elnet.thresh.pr$precision)
+# )
+# 
+# kable(df2)
 ```
 
 
-Both of these tables are filled in with a mix of metrics calculated in the model creation sections and code included in this section when these numbers weren't readily available.  In the case of Tuning, AUROC, AUCPR, TPR, and Precision, I was able to pull this information from the models themselves and from the roc_curve and pr_curve functions.TPR and Precision are threshold specific so I ensured that I found the correct threshold when pulling in this information. It appears that these calculations are preformed in the Yardstick package on columns of data at once. For Accuracy and FPR, I created custom functions. I supplied these functions with entire columns of data and made calculations on the columns rather than calculating them in folds and summing them up later.  The calculations are detailed in the code.
 
-Threshold values represented in both of these charts are extremely small. This is confusing to me because my understanding was that the data was relieved by the roc_curve and pr_curve functions in a manner where a high probability would be designated a blue tarp. I followed this assumption in calculating accuracy and FPR. It could be that I have misunderstood how to interpret these thresholds, or that the packages used to calculate them treat the data differently then I am assuming. If this is the case, accuracy and FPR could be inaccurate in these tables. When I treid to adjust my calculations the results didn't make sense so I have kept my origional calculations for accuracy and FPR.
 
-```{r model-evaluation}
+```{r model-evaluation, results="hide"}
 evaluate_model <- function(type, tr, prob, actual){
   # tr: threshold, prob: probability, type is model type (for label)
   # probability must be probability that target class is true (class 1 should have a probability close to 1)
@@ -1088,21 +1119,25 @@ evaluate_model <- function(type, tr, prob, actual){
                     "Accuracy" = acc, "TPR" = tpr, "FPR" = fpr, "Precision" = prec))
 }
 
-
+# adding calculated parameters
 df1 <- evaluate_model("Logisitic",logistic.thresh$.threshold,logistic.pred$prediction,logistic.pred$actual)
 df2 <- evaluate_model("LDA",lda.thresh$.threshold,lda.pred$prediction,lda.pred$actual)
 df3 <- evaluate_model("QDA",qda.thresh$.threshold,qda.pred$prediction,qda.pred$actual)
 df4 <- evaluate_model("KNN",knn.thresh$.threshold,knn.pred$prediction,knn.pred$actual)
+df4.hp <- evaluate_model("KNN - Hand Picked",knn.thresh.hp$.threshold,knn.pred$prediction,knn.pred$actual)
 df5 <- evaluate_model("Elastic Net",elnet.thresh$.threshold,elnet.pred$prediction,elnet.pred$actual)
 df6 <- evaluate_model("Random Forest",rf.thresh$.threshold,rf.pred$prediction,rf.pred$actual)
+df6.hp <- evaluate_model("Random Forest - Hand Picked",rf.thresh.hp$.threshold,rf.pred$prediction,rf.pred$actual)
 df7 <- evaluate_model("SVM Linear",svm.linear.thresh$.threshold,svm.linear.pred$prediction,svm.linear.pred$actual)
 df8 <- evaluate_model("SVM Radial",svm.radial.thresh$.threshold,svm.radial.pred$prediction,svm.radial.pred$actual)
 
-cv_results <- rbind(df1, df2, df3, df4, df5, df6, df7, df8)
+cv_results <- rbind(df1, df2, df3, df4, df4.hp, df5, df6, df6.hp, df7, df8)
 cv_results
 cv_results <- cv_results %>% mutate(Tuning = "", AUROC = 0) %>% column_to_rownames(var = "Model")
 
-model_types <- list("logistic","lda","qda","knn","elnet","rf","svm.linear","svm.radial")
+
+# adding AUC
+model_types <- list("logistic","lda","qda","knn","knn","elnet","rf","rf","svm.linear","svm.radial")
 models <- row.names(cv_results)
 for(i in 1:length(models)){
   st <- paste0(model_types[i],".auc$.estimate", sep='')
@@ -1110,26 +1145,81 @@ for(i in 1:length(models)){
   cv_results[models[i],]$AUROC <- auc
 }
 
+# adding tuning params
 cv_results["KNN",]$Tuning <- paste("k: ",knn.fit$results[1,1])
+cv_results["KNN - Hand Picked",]$Tuning <- paste("k: ",knn.fit$results[1,1])
 cv_results["Elastic Net",]$Tuning <- paste("alpha: ",
-                    elnet.fit$results[1,1],"lambda: ",elnet.fit$results[1,2])
+                    elnet.fit$results[1,1],", lambda: ",elnet.fit$results[1,2])
+cv_results["Random Forest",]$Tuning <- paste("Num Params: ",rf.tune.top$mtry, 
+                                          ", Num Trees: ", rf.tune.top$num_trees)
+cv_results["Random Forest - Hand Picked",]$Tuning <- paste("Num Params: ",rf.tune.top$mtry, 
+                                          ", Num Trees: ", rf.tune.top$num_trees)
+cv_results["SVM Linear",]$Tuning <- "Cost: 9"
+cv_results["SVM Radial",]$Tuning <- "Cost: 15, Gamma: 7"
+
 # cv_results <- cv_results %>% rowid_to_column()
 cv_results <- cv_results %>% dplyr::select(Tuning, AUROC, Threshold, Accuracy, TPR, FPR, Precision)
-
-
-# update thresholds for custom picked thresholds
-# copy for PR thresholds
-# Ensure all thresholds are fixed.
-# add tuning for rf and svm
-# check table results
-
-# get actual and prediction values for holdout data
-# copy and paste these with that data
-# remove output from this table
+cv_results
 ```
+
+```{r model-evaluation-pr, results="hide"}
+# adding calculated parameters
+pr.df1 <- evaluate_model("Logisitic",logistic.thresh.pr$.threshold,logistic.pred$prediction,logistic.pred$actual)
+pr.df1.hp <- evaluate_model("Logisitic - Hand Picked",logistic.thresh.pr.hp$.threshold,logistic.pred$prediction,logistic.pred$actual)
+pr.df2 <- evaluate_model("LDA",lda.thresh.pr$.threshold,lda.pred$prediction,lda.pred$actual)
+pr.df3 <- evaluate_model("QDA",qda.thresh.pr$.threshold,qda.pred$prediction,qda.pred$actual)
+pr.df3.hp <- evaluate_model("QDA - Hand Picked",qda.thresh.pr.hp$.threshold,qda.pred$prediction,qda.pred$actual)
+pr.df4 <- evaluate_model("KNN",knn.thresh.pr$.threshold,knn.pred$prediction,knn.pred$actual)
+pr.df5 <- evaluate_model("Elastic Net",elnet.thresh.pr$.threshold,elnet.pred$prediction,elnet.pred$actual)
+pr.df6 <- evaluate_model("Random Forest",rf.thresh.pr$.threshold,rf.pred$prediction,rf.pred$actual)
+pr.df7 <- evaluate_model("SVM Linear",svm.linear.thresh.pr$.threshold,svm.linear.pred$prediction,svm.linear.pred$actual)
+pr.df8 <- evaluate_model("SVM Radial",svm.radial.thresh.pr$.threshold,svm.radial.pred$prediction,svm.radial.pred$actual)
+
+cv_results_pr <- rbind(pr.df1, pr.df1.hp, pr.df2, pr.df3, pr.df3.hp, pr.df4, pr.df5, pr.df6, pr.df7, pr.df8)
+cv_results_pr
+cv_results_pr <- cv_results_pr %>% mutate(Tuning = "", AUROC = 0) %>% column_to_rownames(var = "Model")
+
+
+# adding AUC
+model_types <- list("logistic","logistic","lda","qda","qda","knn","elnet","rf","svm.linear","svm.radial")
+models <- row.names(cv_results_pr)
+for(i in 1:length(models)){
+  st <- paste0(model_types[i],".pr$.estimate", sep='')
+  auc <- eval(parse(text = st))
+  cv_results_pr[models[i],]$AUROC <- auc
+}
+
+# adding tuning params
+cv_results_pr["KNN",]$Tuning <- paste("k: ",knn.fit$results[1,1])
+cv_results_pr["Elastic Net",]$Tuning <- paste("alpha: ",
+                    elnet.fit$results[1,1],", lambda: ",elnet.fit$results[1,2])
+cv_results_pr["Random Forest",]$Tuning <- paste("Num Params: ",rf.tune.top$mtry, 
+                                          ", Num Trees: ", rf.tune.top$num_trees)
+cv_results_pr["SVM Linear",]$Tuning <- "Cost: 9"
+cv_results_pr["SVM Radial",]$Tuning <- "Cost: 15, Gamma: 7"
+
+# cv_results_pr <- cv_results_pr %>% rowid_to_column()
+cv_results_pr <- cv_results_pr %>% dplyr::select(Tuning, AUROC, Threshold, Accuracy, TPR, FPR, Precision)
+cv_results_pr
+```
+
 ```{r, echo=FALSE, results="asis"}
+library(knitr)
 kable(cv_results)
 ```
+
+Results using the thresholds calculated from the Precision Recall curves.
+
+```{r, echo=FALSE, results="asis"}
+library(knitr)
+kable(cv_results_pr)
+```
+
+!!!!!!!! UPDATE
+
+Both of these tables are filled in with a mix of metrics calculated in the model creation sections and code included in this section when these numbers weren't readily available.  In the case of Tuning, AUROC, AUCPR, TPR, and Precision, I was able to pull this information from the models themselves and from the roc_curve and pr_curve functions.TPR and Precision are threshold specific so I ensured that I found the correct threshold when pulling in this information. It appears that these calculations are preformed in the Yardstick package on columns of data at once. For Accuracy and FPR, I created custom functions. I supplied these functions with entire columns of data and made calculations on the columns rather than calculating them in folds and summing them up later.  The calculations are detailed in the code.
+
+Threshold values represented in both of these charts are extremely small. This is confusing to me because my understanding was that the data was relieved by the roc_curve and pr_curve functions in a manner where a high probability would be designated a blue tarp. I followed this assumption in calculating accuracy and FPR. It could be that I have misunderstood how to interpret these thresholds, or that the packages used to calculate them treat the data differently then I am assuming. If this is the case, accuracy and FPR could be inaccurate in these tables. When I tried to adjust my calculations the results didn't make sense so I have kept my origional calculations for accuracy and FPR.
 
 # Conclusions
 
@@ -1214,7 +1304,7 @@ colnames(data.holdout.5) <- unlist(colnms)
 # remove unnecessary columns
 data.holdout.5 <- data.holdout.5[,c(1,8:10)]
 # add class column, and source column
-data.holdout.5 <- data.holdout.5 %>% mutate(Class.cl = "BlueTarps", Source="5")
+data.holdout.5 <- data.holdout.5 %>% mutate(Class.cl = "BlueTarp", Source="5")
 data.holdout.5 %>% head(5)
 ```
 
@@ -1241,7 +1331,7 @@ colnames(data.holdout.7) <- unlist(colnms)
 # remove unnecessary columns
 data.holdout.7 <- data.holdout.7[,c(1,8:10)]
 # add class column, and source column
-data.holdout.7 <- data.holdout.7 %>% mutate(Class.cl = "BlueTarps", Source="7")
+data.holdout.7 <- data.holdout.7 %>% mutate(Class.cl = "BlueTarp", Source="7")
 data.holdout.7 %>% head(5)
 ```
 ```{r h8, cache=TRUE}
@@ -1258,17 +1348,234 @@ data.holdout.8 <- data.holdout.8 %>% mutate(Class.cl = "Other", Source="8")
 data.holdout.8 %>% head(5)
 ```
 ```{r}
-# how do dim() compare between files
-# bluetarp vs other ratio
 # are B1 B2 B3 eq to Red Blue Green??
 # are Holdout 2 and 3 duplicates? Both reference 67
 # combine data frames
 # convert Class.cl to factor
+
+```
+
+
+Next we will analyze the data sets to spot trends and differences.
+
+```{r}
+bt <- 0
+ot <- 0
+for(i in 1:8){
+  # print out values Class.cl values and number of observations
+  d <- eval(parse(text = paste0("data.holdout.",i))) #https://stackoverflow.com/questions/9057006/getting-strings-recognized-as-variable-names-in-r
+  print(paste0("Holdout: ",i))
+  print(d$Class.cl %>% table)
+  
+  # sum and print totals of each class
+  if(d$Class.cl[1] == "BlueTarp"){
+    bt = bt + dim(d)[1]
+  }else{
+    ot = ot + dim(d)[1]
+  }
+}
+print(paste0("Blue tarp ", bt))
+print(paste0("Other ", ot))
+print(paste0("Ratio of Blue Tarps ", bt/ot))
+```
+
+I noticed that Holdout 2 and Holdout 3 have the same number of observations.  Looking closer, I noticed that they both reference region 67 blue tarps, which makes me thing this is duplicate data in a different format.  To be sure, I will compare the B1, B2, and B3 values.
+
+```{r}
+# https://stackoverflow.com/questions/19119320/how-to-check-if-two-data-frames-are-equal
+all.equal(data.holdout.2[,c(1,2,3)], data.holdout.3[,c(2,3,4)])
+
+df.temp <- data.holdout.2[,c(1,2,3)]-data.holdout.3[,c(2,3,4)]
+df.temp %>% table()
+```
+
+"all.equal()" gives me 7 differences between the table, which seem insignificant, but are hard to interpret.  Subtracting the tables gives me what appears to be a table full of 0's eaqual to the size of each table.  I can pretty confidently conclude that this is duplicate data and I will ignore data.holdout.3. I will go ahead and combine the data.
+
+```{r}
+data.holdout <- rbind(data.holdout.1, data.holdout.2, data.holdout.4, data.holdout.5, data.holdout.6, data.holdout.7, data.holdout.8)
+data.holdout$Class.cl %>% table()
+b<-data.holdout %>% filter(Class.cl=="BlueTarp") %>% dim()
+o<-data.holdout %>% filter(Class.cl=="Other") %>% dim()
+b[1]/(b[1]+o[1])
+o[1]/(b[1]+o[1])
+```
+
+It looks like there are even fewer Blue tarps in the Holdout data (as a percentage) then there were in the training data.
+
+It is reasonably clear that B1, B2, and B3 correspond to Red, Green and Blue respectively. I have already spot checked some of these color codes to ensure that read this way the blue tarps appear blue.  As a further check, I will look at the aggregate values of the Blue Tarps to see if they are blue in color.
+
+```{r}
+blue <- data.holdout %>% filter(Class.cl=="BlueTarp")
+other <- data.holdout %>% filter(Class.cl=="Other")
+
+blueAvg <- c(mean(blue$B1),mean(blue$B2),mean(blue$B3)) 
+blueAvg
+otherAvg <- c(mean(other$B1),mean(other$B2),mean(other$B3)) 
+otherAvg
+
+blueMed <- c(median(blue$B1),median(blue$B2),median(blue$B3)) 
+blueMed
+otherMed <- c(median(other$B1),median(other$B2),median(other$B3)) 
+otherMed
+```
+
+Rounding down for the average values, the Blue Tarp gave a mean and a median that were considerably more blue than the Other group of values.  Both the mean and median for the Blue Tarps gave a bluish grey, while the, mean for Other was a dark gold and the median was a dark brown.  This lines up with my expectations so I am confident in assuming that B1, B2, and B2 are equivalent to Red, Green, Blue.  I will go ahead and update the data frame, and I will convert Class.cl to a factor.
+
+```{r}
+data.holdout <- data.holdout %>% mutate(Red = B1, Green = B2, Blue = B3)
+data.holdout$Class.cl <- data.holdout$Class.cl %>% as_factor()
+data.holdout$Class.cl %>% contrasts()
 ```
 
 # Results (Hold-Out)
 
-**Hold-Out Performance Table Here**
+Next I will calculate predictions on my large data set.
+
+```{r holdout-predictions, cache=TRUE}
+# create function for obtaining predictions
+generate_predictions <- function(data) {
+  # logistic
+  logistic.predictions <- logistic.fit.final %>% predict(data, type='response')
+  
+  # lda
+  lda.predictions <- lda.fit.final %>% predict(data, type='response')
+  
+  # qda
+  qda.predictions <- qda.fit.final %>% predict(data, type='response')
+  
+  # knn
+  knn.predictions <- knn.fit.final %>% predict(data, 'prob')
+
+  # elnet
+  elnet.predictions <- elnet.fit.final %>% predict(data, 'prob')
+  
+  # random forest
+  rf.predictions <- rf.fit.final %>% predict(data, 'prob')
+  
+  # svg linear
+  svg.linear.predictions <- svm.linear.fit.final %>% predict(data, probability=TRUE)
+  
+  #svg radial
+  svg.radial.predictions <- svm.radial.fit.final %>% predict(data, probability=TRUE)
+ 
+  return(data_frame(actual=data$Class.cl,
+                    logistic_prediction=(logistic.predictions),
+                    lda_prediction=lda.predictions$posterior[,2],
+                    qda_prediction = qda.predictions$posterior[,2],
+                    knn_prediction = 1-knn.predictions$BlueTarp,
+                    elnet_prediction = 1-elnet.predictions$BlueTarp,
+                    rf_prediction = 1-rf.predictions$BlueTarp,
+                    svg_linear_prediction=1-attr(svg.linear.predictions,"probabilities")[,2],
+                    svg_radial_prediction=1-attr(svg.radial.predictions,"probabilities")[,2]))
+}
+```
+
+```{r cache=TRUE}
+d <- data.holdout.1 %>% mutate(Red = B1, Green = B2, Blue = B3)
+d$Class.cl <- d$Class.cl %>% as_factor()
+data.holdout.results <- d %>% generate_predictions()
+# data.holdout.results <- data.holdout %>% generate_predictions()
+```
+
+I will use these predictions, and the actual values to calculate my results.
+
+
+```{r holdout-evaluation, results="hide"}
+
+# adding calculated parameters
+df1 <- evaluate_model("Logisitic",logistic.thresh$.threshold,logistic.pred$prediction,logistic.pred$actual)
+df2 <- evaluate_model("LDA",lda.thresh$.threshold,lda.pred$prediction,lda.pred$actual)
+df3 <- evaluate_model("QDA",qda.thresh$.threshold,qda.pred$prediction,qda.pred$actual)
+df4 <- evaluate_model("KNN",knn.thresh$.threshold,knn.pred$prediction,knn.pred$actual)
+df4.hp <- evaluate_model("KNN - Hand Picked",knn.thresh.hp$.threshold,knn.pred$prediction,knn.pred$actual)
+df5 <- evaluate_model("Elastic Net",elnet.thresh$.threshold,elnet.pred$prediction,elnet.pred$actual)
+df6 <- evaluate_model("Random Forest",rf.thresh$.threshold,rf.pred$prediction,rf.pred$actual)
+df6.hp <- evaluate_model("Random Forest - Hand Picked",rf.thresh.hp$.threshold,rf.pred$prediction,rf.pred$actual)
+df7 <- evaluate_model("SVM Linear",svm.linear.thresh$.threshold,svm.linear.pred$prediction,svm.linear.pred$actual)
+df8 <- evaluate_model("SVM Radial",svm.radial.thresh$.threshold,svm.radial.pred$prediction,svm.radial.pred$actual)
+
+holdout_results <- rbind(df1, df2, df3, df4, df4.hp, df5, df6, df6.hp, df7, df8)
+holdout_results
+holdout_results <- holdout_results %>% mutate(Tuning = "", AUROC = 0) %>% column_to_rownames(var = "Model")
+
+
+# adding AUC
+model_types <- list("logistic","lda","qda","knn","knn","elnet","rf","rf","svm.linear","svm.radial")
+models <- row.names(holdout_results)
+for(i in 1:length(models)){
+  st <- paste0(model_types[i],".auc$.estimate", sep='')
+  auc <- eval(parse(text = st))
+  holdout_results[models[i],]$AUROC <- auc
+}
+
+# adding tuning params
+holdout_results["KNN",]$Tuning <- paste("k: ",knn.fit$results[1,1])
+holdout_results["KNN - Hand Picked",]$Tuning <- paste("k: ",knn.fit$results[1,1])
+holdout_results["Elastic Net",]$Tuning <- paste("alpha: ",
+                    elnet.fit$results[1,1],", lambda: ",elnet.fit$results[1,2])
+holdout_results["Random Forest",]$Tuning <- paste("Num Params: ",rf.tune.top$mtry, 
+                                          ", Num Trees: ", rf.tune.top$num_trees)
+holdout_results["Random Forest - Hand Picked",]$Tuning <- paste("Num Params: ",rf.tune.top$mtry, 
+                                          ", Num Trees: ", rf.tune.top$num_trees)
+holdout_results["SVM Linear",]$Tuning <- "Cost: 9"
+holdout_results["SVM Radial",]$Tuning <- "Cost: 15, Gamma: 7"
+
+holdout_results <- holdout_results %>% dplyr::select(Tuning, AUROC, Threshold, Accuracy, TPR, FPR, Precision)
+holdout_results
+```
+
+```{r holdout-evaluation-pr, results="hide"}
+# adding calculated parameters
+pr.df1 <- evaluate_model("Logisitic",logistic.thresh.pr$.threshold,logistic.pred$prediction,logistic.pred$actual)
+pr.df1.hp <- evaluate_model("Logisitic - Hand Picked",logistic.thresh.pr.hp$.threshold,logistic.pred$prediction,logistic.pred$actual)
+pr.df2 <- evaluate_model("LDA",lda.thresh.pr$.threshold,lda.pred$prediction,lda.pred$actual)
+pr.df3 <- evaluate_model("QDA",qda.thresh.pr$.threshold,qda.pred$prediction,qda.pred$actual)
+pr.df3.hp <- evaluate_model("QDA - Hand Picked",qda.thresh.pr.hp$.threshold,qda.pred$prediction,qda.pred$actual)
+pr.df4 <- evaluate_model("KNN",knn.thresh.pr$.threshold,knn.pred$prediction,knn.pred$actual)
+pr.df5 <- evaluate_model("Elastic Net",elnet.thresh.pr$.threshold,elnet.pred$prediction,elnet.pred$actual)
+pr.df6 <- evaluate_model("Random Forest",rf.thresh.pr$.threshold,rf.pred$prediction,rf.pred$actual)
+pr.df7 <- evaluate_model("SVM Linear",svm.linear.thresh.pr$.threshold,svm.linear.pred$prediction,svm.linear.pred$actual)
+pr.df8 <- evaluate_model("SVM Radial",svm.radial.thresh.pr$.threshold,svm.radial.pred$prediction,svm.radial.pred$actual)
+
+holdout_results_pr <- rbind(pr.df1, pr.df1.hp, pr.df2, pr.df3, pr.df3.hp, pr.df4, pr.df5, pr.df6, pr.df7, pr.df8)
+holdout_results_pr
+holdout_results_pr <- holdout_results_pr %>% mutate(Tuning = "", AUROC = 0) %>% column_to_rownames(var = "Model")
+
+
+# adding AUC
+model_types <- list("logistic","logistic","lda","qda","qda","knn","elnet","rf","svm.linear","svm.radial")
+models <- row.names(holdout_results_pr)
+for(i in 1:length(models)){
+  st <- paste0(model_types[i],".pr$.estimate", sep='')
+  auc <- eval(parse(text = st))
+  holdout_results_pr[models[i],]$AUROC <- auc
+}
+
+# adding tuning params
+holdout_results_pr["KNN",]$Tuning <- paste("k: ",knn.fit$results[1,1])
+holdout_results_pr["Elastic Net",]$Tuning <- paste("alpha: ",
+                    elnet.fit$results[1,1],", lambda: ",elnet.fit$results[1,2])
+holdout_results_pr["Random Forest",]$Tuning <- paste("Num Params: ",rf.tune.top$mtry, 
+                                          ", Num Trees: ", rf.tune.top$num_trees)
+holdout_results_pr["SVM Linear",]$Tuning <- "Cost: 9"
+holdout_results_pr["SVM Radial",]$Tuning <- "Cost: 15, Gamma: 7"
+
+holdout_results_pr <- holdout_results_pr %>% dplyr::select(Tuning, AUROC, Threshold, Accuracy, TPR, FPR, Precision)
+holdout_results_pr
+```
+
+```{r, echo=FALSE, results="asis"}
+library(knitr)
+kable(cv_results)
+```
+
+Results using the thresholds calculated from the Precision Recall curves.
+
+```{r, echo=FALSE, results="asis"}
+library(knitr)
+kable(cv_results_pr)
+```
+
 
 
 # Final Conclusions
