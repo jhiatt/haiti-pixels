@@ -1,5 +1,5 @@
 ---
-title: "Disaster Relief Project: Part I"
+title: "Disaster Relief Project: Part 2"
 author: "Jordan Hiatt"
 date: "`r format(Sys.Date(), '%b %d, %Y')`"
 output:
@@ -69,6 +69,7 @@ library(MASS)
 library(purrr)
 library(e1071)
 library(dplyr)
+library(yardstick)
 ```
 
 # Model Training
@@ -219,7 +220,7 @@ It looks like these folds are evenly split.  There is a strange issue with the f
 
 ## Logistic Regression
 
-```{r logistic-regression, cache=TRUE, warning=FALSE}
+```{r logistic-regression, cache=TRUE, warning=FALSE, message=FALSE}
 # create function to loop through k folds
 cross_val <- function(kfold) {
   # train model on all but the fold passed into the function
@@ -285,10 +286,6 @@ logistic.pr %>% ggplot(aes(x = recall, y = precision)) +
   geom_point(aes(logistic.thresh.pr$recall,logistic.thresh.pr$precision)) +
   geom_point(aes(logistic.pr[2000,]$recall,logistic.pr[2000,]$precision, colour = 'red'))
 
-############ !!!!!!!!!!!!!!!!!!!!!!!! DISCUS ESTIMATED POINT AND UPDATE TABLE!!!
-
-
-
 ```
 
 I calculated logistic regression, LDA and QDA using the same basic code with minor variation. In each, I created a function to loop through each of the ten folds, treating the current fold as the test data set and the rest as training.  The function would then calculate predictions for the current fold (the test data) and return the prediction and actuals which were saved in a data frame. The ROC curve was then calculated using the dataframe making it an ROC curve calculated based on all observations with predictions calculated as test data.  These predictions give us probabilities (not the logit of probabilities) because we used type response.
@@ -302,7 +299,7 @@ Precision recall show the true positives as a percentage of total positives (rec
 On both of the plotted curves, I have calculated and placed the ideal threshold value.  However, the precision recall curve gave an optimal threshold (based on my criteria) that fell to extremely in favor of recall, sacrificing precision. In the spirit of my criteria I eased the rules and hand picked a value that prioritized recall, but has a reasonable precision value. See the threshold section below for information on the calculation.
 
 ## LDA
-```{r lda, cache=TRUE}
+```{r lda, cache=TRUE, message=FALSE}
 # calculate predictions for specific fold
 lda.cross_val <- function(kfold) {
   lda.fit <- lda(Class.cl~Red+Green+Blue, data = data.kfold, subset=fold!=kfold)
@@ -365,7 +362,7 @@ LDA follows logistic regression model calculation very closely. The only major d
 The ROC curve is not as strong on LDA as it is on Logistic regression and the precision recall curve shows a sharp drop off in performance. Because we are concerned with the small number of true values in the data, we will weight the precision recall curve more heavily.
 
 ## QDA
-```{r qda, cache=TRUE}
+```{r qda, cache=TRUE, message=FALSE}
 # calculate predictions for current fold
 qda.cross_val <- function(kfold) {
   qda.fit <- qda(Class.cl~Red+Green+Blue, data = data.kfold, subset=fold!=kfold)
@@ -428,7 +425,7 @@ The calculation of QDA is almost identical to LDA. The ROC results are closer to
 One major difference with the precision recall curve is that the process I used to select the ideal threshold gives us a value with very small precision. As with Logistic regression, I hand picked another point in red that appeared to be better positioned based on visual inspection.
 
 ## KNN
-```{r, knn, cache=TRUE}
+```{r, knn, cache=TRUE, message=FALSE}
 # use my 10 folds for use in caret::train:
 # https://stackoverflow.com/questions/48458407/cross-validation-predictions-from-caret-in-assigned-to-different-folds
 getFoldList <- function(i){
@@ -438,7 +435,7 @@ getFoldList <- function(i){
 fold_list <- 1:10 %>% purrr::map(getFoldList)
 
 # fit model
-ctl <- trainControl(method = "cv", index = fold_list) #, savePredictions = 'final', classProbs=TRUE) not saving predictions
+ctl <- trainControl(method = "cv", index = fold_list)
 knn.fit <- caret::train(Class.cl~Red+Green+Blue, data = data.kfold, 
                         method = 'knn', trControl = ctl)
 knn.fit
@@ -446,24 +443,24 @@ knn.fit$bestTune
 knn.fit$finalModel
 ```
 
-```{r}
+```{r, message=FALSE}
 # create a function for calculating predictions based on the final model parameters, given a fold
 knn.cross_val <- function(kfold) {
-  ctl.none <- trainControl(method = "none") # relying on this post https://stats.stackexchange.com/questions/23763/is-there-a-way-to-disable-the-parameter-tuning-grid-feature-in-caret
+  ctl.none <- caret::trainControl(method = "none") # relying on this post https://stats.stackexchange.com/questions/23763/is-there-a-way-to-disable-the-parameter-tuning-grid-feature-in-caret
   knn.fit.tuned <- caret::train(Class.cl~Red+Green+Blue, data = data.kfold, 
                         subset=fold!=kfold, method = 'knn', trControl = ctl.none, 
                         tuneGrid = knn.fit$bestTune)
   holdout <- filter(data.kfold, fold == kfold)
   predictions <- knn.fit.tuned %>% predict(holdout, 'prob')
   # return actual, then predictions
-  return(data_frame(fold=i,actual=holdout$Class.cl,
-                    prediction=1-predictions$BlueTarp))
+  return(tibble(fold=i,actual=holdout$Class.cl,
+                    prediction=(1-predictions$BlueTarp)))
 }
 
 # calculate predictions on data using best model
-knn.pred <- data_frame(fold=numeric(),actual=factor(),prediction=numeric())
+knn.pred <- tibble(fold=numeric(),actual=factor(),prediction=numeric())
 for (i in 1:10) {
-  knn.pred<-full_join(knn.pred, knn.cross_val(i))
+  knn.pred<-rbind(knn.pred, knn.cross_val(i))
 }
 
 # for holdout data
@@ -533,7 +530,7 @@ The Caret package will run the cross validation through multiple values of k to 
 #              trControl=trainControl("cv", number=5, returnResamp='all', index = fold_list, search = "grid"))
 ```
 
-```{r elasticnet, cache=TRUE}
+```{r elasticnet, cache=TRUE, message=FALSE, warning=FALSE}
 # First method
 # loop through lambda and alpha
 library(glmnet)
@@ -542,11 +539,10 @@ set.seed(42)
 # https://stackoverflow.com/questions/48280074/r-how-to-let-glmnet-select-lambda-while-providing-an-alpha-range-in-caret
 elnet.fit <- caret::train(Class.cl~Red+Green+Blue, data=data.kfold, 
                         method="glmnet", trControl=trainControl("cv",
-                        returnResamp='all', index = fold_list, search = "grid"))  # !!!!!!!!!!!!!! check these, why return resample....
-
+                        index = fold_list, search = "grid"))  
 ```
 
-```{r}
+```{r elnet-cv, message=FALSE}
 # create a function for calculating predictions based on the final model parameters, given a fold
 elnet.cross_val <- function(kfold) {
   ctl.none <- trainControl(method = "none") # relying on this post https://stats.stackexchange.com/questions/23763/is-there-a-way-to-disable-the-parameter-tuning-grid-feature-in-caret
@@ -557,7 +553,7 @@ elnet.cross_val <- function(kfold) {
   # return actual, then predictions
   # data returned from predictions is similar to LDA
   return(data_frame(fold=i,actual=holdout$Class.cl,
-                    prediction=1-predictions$BlueTarp))
+                    prediction=(1-predictions$BlueTarp)))
 }
 
 # calculate predictions on data using best model
@@ -623,12 +619,10 @@ Elastic net has two tuning parameters, alpha and lambda. Alpha controls the type
 
 The end result was that an alpha of 1 was selected with a lambda of 8.322155e-05, row 7 under results.  Compared to the other lambdas and alphas considered, this one has the highest accuracy. An alpha of 1 indicates that this model behaves like lasso penalized regression, suggesting that a model could be eliminated, but looking up coefficient names, it appears that all three colors were kept.
 
-**NOTE: PART II same as above plus add Random Forest and SVM to Model Training.**
-
 
 ## Random Forest
 
-```{r rf-numTrees, cache=TRUE}
+```{r rf-numTrees, cache=TRUE, results="hide", message=FALSE}
 set.seed(42)
 # Use a smaller data set to cut down on processing time.
 data.temp <- data.kfold %>% filter(fold %in% c(1))
@@ -652,7 +646,8 @@ for (i in 1:40){
   print(i)
   
   test_accuracy <- length(acc.logical_vector[acc.logical_vector==TRUE])/length(acc.logical_vector) #https://intellipaat.com/community/5004/how-to-count-true-values-in-r
-  temp.results <- rbind(temp.results, data.frame(num_pred=rf.fit.temp$bestTune$mtry,num_trees=i,test_accuracy=test_accuracy))
+  temp.results <- rbind(temp.results, data.frame(num_pred=rf.fit.temp$bestTune$mtry,
+                                            num_trees=i,test_accuracy=test_accuracy))
 }
 ```
 ```{r}
@@ -669,7 +664,7 @@ The first step for my random forest model is finding a good range for trees for 
 It looks like after 15-25 trees we reach diminishing returns.
 
 
-```{r rf-tuning, cache=TRUE}
+```{r rf-tuning, cache=TRUE, results="hide"}
 # tune for number of trees and number of predictors
 set.seed(42)
 rf.tune.results <- data.frame()
@@ -696,7 +691,7 @@ rf.tune.top[1,1]
 
 The results give us the highest number of trees in the range, but there is pretty good variation in the first 6 so I think our tree range is safe.
 
-```{r rf-predict, cache=TRUE}
+```{r rf-predict, cache=TRUE, message=FALSE, warning=FALSE}
 # make predictions
 set.seed(42)
 rf.cross_val <- function(kfold) {
@@ -780,7 +775,9 @@ library(e1071) # for reference https://cran.r-project.org/web/packages/e1071/e10
 
 set.seed(42)
 tune.svm.lin <- e1071::tune.control(sampling = "cross",cross = 10)
-svm.tune.linear <- e1071::tune(svm, Class.cl~Red+Green+Blue, data = data.kfold, kernal="linear", ranges = list(cost=c(5,7,9,11,13)), tunecontrol = tune.svm.lin)
+svm.tune.linear <- e1071::tune(svm, Class.cl~Red+Green+Blue, data = data.kfold, 
+                               kernal="linear", ranges = list(cost=c(5,7,9,11,13)),
+                               tunecontrol = tune.svm.lin)
 
 ```
 ```{r}
@@ -791,7 +788,7 @@ svm.tune.linear$performances
 Initial passes showed that a cost of 0.01 had an error fo 0.12, while the better error rates were with costs of around 5 and 10 at around 0.003.  As the cost increased, error decreased, but after a cost of about 5, the decrease in error became small.  I decided to use a cost range of 5-13 for tuning.  I'm sure a cost of above 13 will give a lower cost but I am wary of overtraining. Here, 13 gives the best error, but 9 and 11 have the same error. Because this seems like a plateau, I will chose the lower value of 9. The error is so similar, a cost of 9 seems like a safer value if concerned about overtraining.
 
 
-```{r SVM-Linear-error-est}
+```{r SVM-Linear-error-est, message=FALSE}
 set.seed(42)
 svm.linear.cross_val <- function(kfold) {
 
@@ -859,7 +856,9 @@ svm.linear.pr %>% ggplot(aes(x = recall, y = precision)) +
 ```{r svm-radial, cache=TRUE}
 set.seed(42)
 tune.svm.rad <- e1071::tune.control(sampling = "cross",cross = 10)
-svm.tune.rad <- e1071::tune(svm, Class.cl~Red+Green+Blue, data = data.kfold, kernal="radial", ranges = list(cost=c(7,10,13,15,18), gamma=c(3,4,5,6,7)), tunecontrol = tune.svm.rad)
+svm.tune.rad <- e1071::tune(svm, Class.cl~Red+Green+Blue, data = data.kfold, 
+                        kernal="radial", ranges = list(cost=c(7,10,13,15,18), 
+                        gamma=c(3,4,5,6,7)), tunecontrol = tune.svm.rad)
 
 ```
 ```{r}
@@ -948,14 +947,16 @@ To achieve this, I performed the same task for each model. On the ROC data, I fi
 
 I created two cross validation tables (below), the first with calculations based on an ROC threshold and the second based on a precision recall threshold. To calculate TPR, FPR, accuracy and precision, I applied these thresholds to the probabilities that the pixel represented a blue tarp.  I ensured that in logistic regression, the threshold was applied to the probability not the logit of probabilities.
 
-For two of the models, Elastic Net and QDA, the thresholds given by my computational method on the PR curve were very far to one side. Instead of using these values I hand picked values based on visual examination of the plot, finding an ideal balance of precision and recall.
+For several of the models, the thresholds given by my computational method on the ROC or PR curve were very far to one side, to the point where the threshold chosen appeared to be less useful. In addition to using these values I hand picked values based on visual examination of the plot, finding an ideal balance of sensativity and specificity or precision and recall. I have included these as additional lines in the table.
+
+In including multiple thresholds for each best model, I am hoping to cast a wider net and find an ideal threshold. My expectation is that the PR based thresholds (particularly the handpicked variable when available) will perform the best, because they consider more heavily the Blue Tarp data, which is much more rare.  I am interested to see if there is a broad trend  in whether PR or ROC based thresholds are more reliable.
 
 # Results (Cross-Validation)
 
-CV Performance Table based on the threshold obtained using the ROC Curve
+
 
 ```{r echo = FALSE, eval=FALSE, results='asis'}
-library(knitr)
+#library(knitr)
 
 # calculate accuracy
 # getAcc <- function(prob, tr, actual){
@@ -1080,7 +1081,7 @@ library(knitr)
 
 
 
-```{r model-evaluation, results="hide"}
+```{r model-evaluation, results="hide", message=FALSE}
 evaluate_model <- function(type, tr, prob, actual){
   # tr: threshold, prob: probability, type is model type (for label)
   # probability must be probability that target class is true (class 1 should have a probability close to 1)
@@ -1162,7 +1163,7 @@ cv_results <- cv_results %>% dplyr::select(Tuning, AUROC, Threshold, Accuracy, T
 cv_results
 ```
 
-```{r model-evaluation-pr, results="hide"}
+```{r model-evaluation-pr, results="hide", message=FALSE, warning=FALSE}
 # adding calculated parameters
 pr.df1 <- evaluate_model("Logisitic",logistic.thresh.pr$.threshold,logistic.pred$prediction,logistic.pred$actual)
 pr.df1.hp <- evaluate_model("Logisitic - Hand Picked",logistic.thresh.pr.hp$.threshold,logistic.pred$prediction,logistic.pred$actual)
@@ -1203,6 +1204,8 @@ cv_results_pr <- cv_results_pr %>% dplyr::select(Tuning, AUROC, Threshold, Accur
 cv_results_pr
 ```
 
+CV Performance Table based on the threshold obtained using the ROC Curve
+
 ```{r, echo=FALSE, results="asis"}
 library(knitr)
 kable(cv_results)
@@ -1215,39 +1218,21 @@ library(knitr)
 kable(cv_results_pr)
 ```
 
-!!!!!!!! UPDATE
 
-Both of these tables are filled in with a mix of metrics calculated in the model creation sections and code included in this section when these numbers weren't readily available.  In the case of Tuning, AUROC, AUCPR, TPR, and Precision, I was able to pull this information from the models themselves and from the roc_curve and pr_curve functions.TPR and Precision are threshold specific so I ensured that I found the correct threshold when pulling in this information. It appears that these calculations are preformed in the Yardstick package on columns of data at once. For Accuracy and FPR, I created custom functions. I supplied these functions with entire columns of data and made calculations on the columns rather than calculating them in folds and summing them up later.  The calculations are detailed in the code.
+Both of these tables are filled in with a mix of metrics calculated in the model creation sections and code included in this section when these numbers weren't readily available.  To generate these metrics, I created an "evaluate_model" function and passed in actual and predicted values, and a threshold. TPR, FPR, Accuracy, Precision are all calculated in this function.  I then bring in AUC, Threshold, and Tuning Parameters.  You can see that these thresholds are very small values, meaning that anything that could potentially be a Blue Tarp is classified as a Blue Tarp.  This aligns with our stated assumptions and goals.
 
-Threshold values represented in both of these charts are extremely small. This is confusing to me because my understanding was that the data was relieved by the roc_curve and pr_curve functions in a manner where a high probability would be designated a blue tarp. I followed this assumption in calculating accuracy and FPR. It could be that I have misunderstood how to interpret these thresholds, or that the packages used to calculate them treat the data differently then I am assuming. If this is the case, accuracy and FPR could be inaccurate in these tables. When I tried to adjust my calculations the results didn't make sense so I have kept my origional calculations for accuracy and FPR.
 
-# Conclusions
-
-### Conclusion \#1 - Model Selection
-
-I have selected the Logistic Regression model as the model to be used for prediction.  Overall, only KNN has more favorable metrics than Logistic Regression. However, KNN's threshold is very far from the others, making me suspicious of overfitting and leading me to wonder how it will perform on test data. Accuracy, Precision, TPR and FPR all are very strong for Logistic Regression on both the ROC and precision recall metrics.
-
-### Conclusion \#2 - Relying on this Model and Threshold
-
-I want to emphasize the weakness of our assumptions. For this model we selected a threshold assuming unlimited resources. In practice, I recommend starting with this model and the blue tarp predictions it gives initially. If this number of blue tarps is unfeasible for the amount of resources you have, increase the threshold so that there are fewer blue tarps predicted so that they can be investigated and supported with the resources you have. This will reduce the chances that resources are wasted on false positives, while ensuring that the highest number of true positives are served. The strong TPR's and high FPR's for all of these models suggest that there will be an over prediction of Blue Tarps.
-
-Finally, I encourage users of this model to decide ahead of time what percentage of resources will be allocated by this model and which will be allocated using more traditional means of information gathering. No model is perfect and should not be treated as such. Allocating resources to the data provided by this model ahead of analyzing model output will prevent the instinct to chase false positives.
-
-### Conclusion \#3 - KNN vs Logistic Regression 
-
-While KNN and Logistic Regression appear to be very strong models. This is suspicious to me, given that KNN has a low k value of 5 and Logistic Regression has few variables and no transformations. Normally I would assume that this would make KNN  very flexible and Logistic Regression very inflexible putting them on opposite ends. If the underlying model is linear than Logistic regression should be a clear winner, if it is not, KNN should win out.  For both of them to perform similarly seems suspicious. Additionally, the ROC and Precision recall curves for these two models are very similar, while LDA is very different from Logistic regression. If the underlying relationship is linear, than LDA should have performed much better.
-
-### Conclusion \#4 - Precision Recall Data
-
-The precision recall plots yield very interesting data.  Unhampered by the overwhelming true negative data, the graphs are often weaker than the ROC curves. Probably due to some logical error in my calculation that I have missed, the thresholds calculated automatically in both methods are the same, except when I hand picked thresholds based on a visual inspection of the precision recall curve in QDA and Elastic Net.  In these cases I sought a corner of the graph where both precision and recall were relatively high, rather than sacrificing too much precision to benefit recall. I did this by handpicking indexes in the precision recall curve table until I found the point I was looking for. Provided the models are accurately represented by the curves, the precision recall plots provided useful in separating the apparently strongest models of KNN and Logistic regression from the others. I am very interested in what further analysis can come from these plots and calculations.
 
 
 # Hold-out Data / EDA
 
-```{r h1, cache=TRUE}
+The following code is used to bring in each of the tab dilimited text files containing the Holdout data.  Each file is saved as a seperate data set.  Image files are ignored.
+
+```{r h1, cache=TRUE, message=FALSE, warning=FALSE}
 # processing file 1
 # load
-data.holdout.1 <- read_delim('HoldOutData/orthovnir057_ROI_NON_Blue_Tarps.txt',delim = " ", col_names = TRUE, skip_empty_rows=TRUE, skip = 7, trim_ws = TRUE)
+data.holdout.1 <- read_delim('HoldOutData/orthovnir057_ROI_NON_Blue_Tarps.txt',
+      delim = " ", col_names = TRUE, skip_empty_rows=TRUE, skip = 7, trim_ws = TRUE)
 # fix column header alignment
 colnms <- (colnames(data.holdout.1))[-c(1,5,7)]
 colnames(data.holdout.1) <- unlist(colnms)
@@ -1257,20 +1242,22 @@ data.holdout.1 <- data.holdout.1[,c(1,8:10)]
 data.holdout.1 <- data.holdout.1 %>% mutate(Class.cl = "Other", Source="1")
 data.holdout.1 %>% head(5)
 ```
-```{r h2, cache=TRUE}
+```{r h2, cache=TRUE, message=FALSE, warning=FALSE}
 # processing file 2
 # load
-data.holdout.2 <- read_tsv('HoldOutData/orthovnir067_ROI_Blue_Tarps_data.txt', col_names = TRUE, skip_empty_rows=TRUE, trim_ws = TRUE)
+data.holdout.2 <- read_tsv('HoldOutData/orthovnir067_ROI_Blue_Tarps_data.txt',
+                           col_names = TRUE, skip_empty_rows=TRUE, trim_ws = TRUE)
 # remove unnecessary columns
 data.holdout.2 <- data.holdout.2[,-1]
 # add class column, and source column
 data.holdout.2 <- data.holdout.2 %>% mutate(Class.cl = "BlueTarp", Source="2", ID=row_number())
 data.holdout.2 %>% head(5)
 ```
-```{r h3, cache=TRUE}
+```{r h3, cache=TRUE, message=FALSE, warning=FALSE}
 # processing file 3
 # load
-data.holdout.3 <- read_delim('HoldOutData/orthovnir067_ROI_Blue_Tarps.txt',delim = " ", col_names = TRUE, skip_empty_rows=TRUE, skip = 7, trim_ws = TRUE)
+data.holdout.3 <- read_delim('HoldOutData/orthovnir067_ROI_Blue_Tarps.txt',delim = " ",
+                             col_names = TRUE, skip_empty_rows=TRUE, skip = 7, trim_ws = TRUE)
 # fix column header alignment
 colnms <- (colnames(data.holdout.3))[-c(1,5,7)]
 colnames(data.holdout.3) <- unlist(colnms)
@@ -1280,10 +1267,11 @@ data.holdout.3 <- data.holdout.3[,c(1,8:10)]
 data.holdout.3 <- data.holdout.3 %>% mutate(Class.cl = "BlueTarp", Source="3")
 data.holdout.3 %>% head(5)
 ```
-```{r h4, cache=TRUE}
+```{r h4, cache=TRUE, message=FALSE, warning=FALSE}
 # processing file 4
 # load
-data.holdout.4 <- read_delim('HoldOutData/orthovnir067_ROI_NOT_Blue_Tarps.txt',delim = " ", col_names = TRUE, skip_empty_rows=TRUE, skip = 7, trim_ws = TRUE)
+data.holdout.4 <- read_delim('HoldOutData/orthovnir067_ROI_NOT_Blue_Tarps.txt',
+    delim = " ", col_names = TRUE, skip_empty_rows=TRUE, skip = 7, trim_ws = TRUE)
 # fix column header alignment
 colnms <- (colnames(data.holdout.4))[-c(1,5,7)]
 colnames(data.holdout.4) <- unlist(colnms)
@@ -1294,10 +1282,11 @@ data.holdout.4 <- data.holdout.4 %>% mutate(Class.cl = "Other", Source="4")
 data.holdout.4 %>% head(5)
 ```
 
-```{r h5, cache=TRUE}
+```{r h5, cache=TRUE, message=FALSE, warning=FALSE}
 # processing file 5
 # load
-data.holdout.5 <- read_delim('HoldOutData/orthovnir069_ROI_Blue_Tarps.txt',delim = " ", col_names = TRUE, skip_empty_rows=TRUE, skip = 7, trim_ws = TRUE)
+data.holdout.5 <- read_delim('HoldOutData/orthovnir069_ROI_Blue_Tarps.txt',
+    delim = " ", col_names = TRUE, skip_empty_rows=TRUE, skip = 7, trim_ws = TRUE)
 # fix column header alignment
 colnms <- (colnames(data.holdout.5))[-c(1,5,7)]
 colnames(data.holdout.5) <- unlist(colnms)
@@ -1308,10 +1297,11 @@ data.holdout.5 <- data.holdout.5 %>% mutate(Class.cl = "BlueTarp", Source="5")
 data.holdout.5 %>% head(5)
 ```
 
-```{r h6, cache=TRUE}
+```{r h6, cache=TRUE, message=FALSE, warning=FALSE}
 # processing file 6
 # load
-data.holdout.6 <- read_delim('HoldOutData/orthovnir069_ROI_NOT_Blue_Tarps.txt',delim = " ", col_names = TRUE, skip_empty_rows=TRUE, skip = 7, trim_ws = TRUE)
+data.holdout.6 <- read_delim('HoldOutData/orthovnir069_ROI_NOT_Blue_Tarps.txt',
+      delim = " ", col_names = TRUE, skip_empty_rows=TRUE, skip = 7, trim_ws = TRUE)
 # fix column header alignment
 colnms <- (colnames(data.holdout.6))[-c(1,5,7)]
 colnames(data.holdout.6) <- unlist(colnms)
@@ -1321,10 +1311,11 @@ data.holdout.6 <- data.holdout.6[,c(1,8:10)]
 data.holdout.6 <- data.holdout.6 %>% mutate(Class.cl = "Other", Source="6")
 data.holdout.6 %>% head(5)
 ```
-```{r h7, cache=TRUE}
+```{r h7, cache=TRUE, message=FALSE, warning=FALSE}
 # processing file 7
 # load
-data.holdout.7 <- read_delim('HoldOutData/orthovnir078_ROI_Blue_Tarps.txt',delim = " ", col_names = TRUE, skip_empty_rows=TRUE, skip = 7, trim_ws = TRUE)
+data.holdout.7 <- read_delim('HoldOutData/orthovnir078_ROI_Blue_Tarps.txt',
+    delim = " ", col_names = TRUE, skip_empty_rows=TRUE, skip = 7, trim_ws = TRUE)
 # fix column header alignment
 colnms <- (colnames(data.holdout.7))[-c(1,5,7)]
 colnames(data.holdout.7) <- unlist(colnms)
@@ -1334,10 +1325,11 @@ data.holdout.7 <- data.holdout.7[,c(1,8:10)]
 data.holdout.7 <- data.holdout.7 %>% mutate(Class.cl = "BlueTarp", Source="7")
 data.holdout.7 %>% head(5)
 ```
-```{r h8, cache=TRUE}
+```{r h8, cache=TRUE, message=FALSE, warning=FALSE}
 # processing file 8
 # load
-data.holdout.8 <- read_delim('HoldOutData/orthovnir078_ROI_NON_Blue_Tarps.txt',delim = " ", col_names = TRUE, skip_empty_rows=TRUE, skip = 7, trim_ws = TRUE)
+data.holdout.8 <- read_delim('HoldOutData/orthovnir078_ROI_NON_Blue_Tarps.txt',
+  delim = " ", col_names = TRUE, skip_empty_rows=TRUE, skip = 7, trim_ws = TRUE)
 # fix column header alignment
 colnms <- (colnames(data.holdout.8))[-c(1,5,7)]
 colnames(data.holdout.8) <- unlist(colnms)
@@ -1346,13 +1338,6 @@ data.holdout.8 <- data.holdout.8[,c(1,8:10)]
 # add class column, and source column
 data.holdout.8 <- data.holdout.8 %>% mutate(Class.cl = "Other", Source="8")
 data.holdout.8 %>% head(5)
-```
-```{r}
-# are B1 B2 B3 eq to Red Blue Green??
-# are Holdout 2 and 3 duplicates? Both reference 67
-# combine data frames
-# convert Class.cl to factor
-
 ```
 
 
@@ -1379,7 +1364,7 @@ print(paste0("Other ", ot))
 print(paste0("Ratio of Blue Tarps ", bt/ot))
 ```
 
-I noticed that Holdout 2 and Holdout 3 have the same number of observations.  Looking closer, I noticed that they both reference region 67 blue tarps, which makes me thing this is duplicate data in a different format.  To be sure, I will compare the B1, B2, and B3 values.
+I noticed that Holdout 2 and Holdout 3 have the same number of observations.  Looking closer, I noticed that they both reference region 67 blue tarps, which makes me think this is duplicate data in a different format.  To be sure, I will compare the B1, B2, and B3 values.
 
 ```{r}
 # https://stackoverflow.com/questions/19119320/how-to-check-if-two-data-frames-are-equal
@@ -1389,10 +1374,11 @@ df.temp <- data.holdout.2[,c(1,2,3)]-data.holdout.3[,c(2,3,4)]
 df.temp %>% table()
 ```
 
-"all.equal()" gives me 7 differences between the table, which seem insignificant, but are hard to interpret.  Subtracting the tables gives me what appears to be a table full of 0's eaqual to the size of each table.  I can pretty confidently conclude that this is duplicate data and I will ignore data.holdout.3. I will go ahead and combine the data.
+"all.equal()" gives me 7 differences between the table, which seem insignificant, but are hard to interpret.  Subtracting the tables gives me what appears to be a table full of 0's equal to the size of each table.  I can pretty confidently conclude that this is duplicate data and I will ignore data.holdout.3. I will go ahead and combine the data.
 
 ```{r}
-data.holdout <- rbind(data.holdout.1, data.holdout.2, data.holdout.4, data.holdout.5, data.holdout.6, data.holdout.7, data.holdout.8)
+data.holdout <- rbind(data.holdout.1, data.holdout.2, data.holdout.4, 
+                data.holdout.5, data.holdout.6, data.holdout.7, data.holdout.8)
 data.holdout$Class.cl %>% table()
 b<-data.holdout %>% filter(Class.cl=="BlueTarp") %>% dim()
 o<-data.holdout %>% filter(Class.cl=="Other") %>% dim()
@@ -1419,7 +1405,7 @@ otherMed <- c(median(other$B1),median(other$B2),median(other$B3))
 otherMed
 ```
 
-Rounding down for the average values, the Blue Tarp gave a mean and a median that were considerably more blue than the Other group of values.  Both the mean and median for the Blue Tarps gave a bluish grey, while the, mean for Other was a dark gold and the median was a dark brown.  This lines up with my expectations so I am confident in assuming that B1, B2, and B2 are equivalent to Red, Green, Blue.  I will go ahead and update the data frame, and I will convert Class.cl to a factor.
+Rounding down for the average values, the Blue Tarp gave a mean and a median that were considerably more blue than the Other group of values.  Both the mean and median for the Blue Tarps gave a bluish gray, while the, mean for Other was a dark gold and the median was a dark brown.  This lines up with my expectations so I am confident in assuming that B1, B2, and B2 are equivalent to Red, Green, Blue.  I will go ahead and update the data frame, and I will convert Class.cl to a factor.
 
 ```{r}
 data.holdout <- data.holdout %>% mutate(Red = B1, Green = B2, Blue = B3)
@@ -1452,11 +1438,11 @@ generate_predictions <- function(data) {
   # random forest
   rf.predictions <- rf.fit.final %>% predict(data, 'prob')
   
-  # svg linear
-  svg.linear.predictions <- svm.linear.fit.final %>% predict(data, probability=TRUE)
+  # svm linear
+  svm.linear.predictions <- svm.linear.fit.final %>% predict(data, probability=TRUE)
   
   #svg radial
-  svg.radial.predictions <- svm.radial.fit.final %>% predict(data, probability=TRUE)
+  svm.radial.predictions <- svm.radial.fit.final %>% predict(data, probability=TRUE)
  
   return(data_frame(actual=data$Class.cl,
                     logistic_prediction=(logistic.predictions),
@@ -1465,42 +1451,61 @@ generate_predictions <- function(data) {
                     knn_prediction = 1-knn.predictions$BlueTarp,
                     elnet_prediction = 1-elnet.predictions$BlueTarp,
                     rf_prediction = 1-rf.predictions$BlueTarp,
-                    svg_linear_prediction=1-attr(svg.linear.predictions,"probabilities")[,2],
-                    svg_radial_prediction=1-attr(svg.radial.predictions,"probabilities")[,2]))
+                    svm_linear_prediction=1-attr(svm.linear.predictions,"probabilities")[,2],
+                    svm_radial_prediction=1-attr(svm.radial.predictions,"probabilities")[,2]))
 }
 ```
 
-```{r cache=TRUE}
-d <- data.holdout.1 %>% mutate(Red = B1, Green = B2, Blue = B3)
-d$Class.cl <- d$Class.cl %>% as_factor()
-data.holdout.results <- d %>% generate_predictions()
-# data.holdout.results <- data.holdout %>% generate_predictions()
+```{r cache=TRUE, message=FALSE, warning=FALSE}
+data.holdout.results <- data.holdout %>% generate_predictions()
 ```
 
 I will use these predictions, and the actual values to calculate my results.
 
 
-```{r holdout-evaluation, results="hide"}
+```{r holdout-evaluation, results="hide", message=FALSE}
 
 # adding calculated parameters
-df1 <- evaluate_model("Logisitic",logistic.thresh$.threshold,logistic.pred$prediction,logistic.pred$actual)
-df2 <- evaluate_model("LDA",lda.thresh$.threshold,lda.pred$prediction,lda.pred$actual)
-df3 <- evaluate_model("QDA",qda.thresh$.threshold,qda.pred$prediction,qda.pred$actual)
-df4 <- evaluate_model("KNN",knn.thresh$.threshold,knn.pred$prediction,knn.pred$actual)
-df4.hp <- evaluate_model("KNN - Hand Picked",knn.thresh.hp$.threshold,knn.pred$prediction,knn.pred$actual)
-df5 <- evaluate_model("Elastic Net",elnet.thresh$.threshold,elnet.pred$prediction,elnet.pred$actual)
-df6 <- evaluate_model("Random Forest",rf.thresh$.threshold,rf.pred$prediction,rf.pred$actual)
-df6.hp <- evaluate_model("Random Forest - Hand Picked",rf.thresh.hp$.threshold,rf.pred$prediction,rf.pred$actual)
-df7 <- evaluate_model("SVM Linear",svm.linear.thresh$.threshold,svm.linear.pred$prediction,svm.linear.pred$actual)
-df8 <- evaluate_model("SVM Radial",svm.radial.thresh$.threshold,svm.radial.pred$prediction,svm.radial.pred$actual)
+df1 <- evaluate_model("Logisitic",logistic.thresh$.threshold,
+                      data.holdout.results$logistic_prediction,
+                      data.holdout.results$actual)
+df2 <- evaluate_model("LDA",lda.thresh$.threshold,
+                      data.holdout.results$lda_prediction,
+                      data.holdout.results$actual)
+df3 <- evaluate_model("QDA",qda.thresh$.threshold,
+                      data.holdout.results$qda_prediction,
+                      data.holdout.results$actual)
+df4 <- evaluate_model("KNN",knn.thresh$.threshold,
+                      data.holdout.results$knn_prediction,
+                      data.holdout.results$actual)
+df4.hp <- evaluate_model("KNN - Hand Picked",knn.thresh.hp$.threshold,
+                         data.holdout.results$knn_prediction,
+                         data.holdout.results$actual)
+df5 <- evaluate_model("Elastic Net",elnet.thresh$.threshold,
+                      data.holdout.results$elnet_prediction,
+                      data.holdout.results$actual)
+df6 <- evaluate_model("Random Forest",rf.thresh$.threshold,
+                      data.holdout.results$rf_prediction,
+                      data.holdout.results$actual)
+df6.hp <- evaluate_model("Random Forest - Hand Picked",rf.thresh.hp$.threshold,
+                         data.holdout.results$rf_prediction,
+                         data.holdout.results$actual)
+df7 <- evaluate_model("SVM Linear",svm.linear.thresh$.threshold,
+                      data.holdout.results$svm_linear_prediction,
+                      data.holdout.results$actual)
+df8 <- evaluate_model("SVM Radial",svm.radial.thresh$.threshold,
+                      data.holdout.results$svm_radial_prediction,
+                      data.holdout.results$actual)
 
 holdout_results <- rbind(df1, df2, df3, df4, df4.hp, df5, df6, df6.hp, df7, df8)
 holdout_results
-holdout_results <- holdout_results %>% mutate(Tuning = "", AUROC = 0) %>% column_to_rownames(var = "Model")
+holdout_results <- holdout_results %>% mutate(Tuning = "", 
+                                AUROC = 0) %>% column_to_rownames(var = "Model")
 
 
 # adding AUC
-model_types <- list("logistic","lda","qda","knn","knn","elnet","rf","rf","svm.linear","svm.radial")
+model_types <- list("logistic","lda","qda","knn","knn",
+                    "elnet","rf","rf","svm.linear","svm.radial")
 models <- row.names(holdout_results)
 for(i in 1:length(models)){
   st <- paste0(model_types[i],".auc$.estimate", sep='')
@@ -1520,30 +1525,63 @@ holdout_results["Random Forest - Hand Picked",]$Tuning <- paste("Num Params: ",r
 holdout_results["SVM Linear",]$Tuning <- "Cost: 9"
 holdout_results["SVM Radial",]$Tuning <- "Cost: 15, Gamma: 7"
 
-holdout_results <- holdout_results %>% dplyr::select(Tuning, AUROC, Threshold, Accuracy, TPR, FPR, Precision)
+holdout_results <- holdout_results %>% dplyr::select(Tuning, AUROC, Threshold, 
+                                                  Accuracy, TPR, FPR, Precision)
 holdout_results
 ```
 
-```{r holdout-evaluation-pr, results="hide"}
+```{r holdout-evaluation-pr, results="hide", message=FALSE}
 # adding calculated parameters
-pr.df1 <- evaluate_model("Logisitic",logistic.thresh.pr$.threshold,logistic.pred$prediction,logistic.pred$actual)
-pr.df1.hp <- evaluate_model("Logisitic - Hand Picked",logistic.thresh.pr.hp$.threshold,logistic.pred$prediction,logistic.pred$actual)
-pr.df2 <- evaluate_model("LDA",lda.thresh.pr$.threshold,lda.pred$prediction,lda.pred$actual)
-pr.df3 <- evaluate_model("QDA",qda.thresh.pr$.threshold,qda.pred$prediction,qda.pred$actual)
-pr.df3.hp <- evaluate_model("QDA - Hand Picked",qda.thresh.pr.hp$.threshold,qda.pred$prediction,qda.pred$actual)
-pr.df4 <- evaluate_model("KNN",knn.thresh.pr$.threshold,knn.pred$prediction,knn.pred$actual)
-pr.df5 <- evaluate_model("Elastic Net",elnet.thresh.pr$.threshold,elnet.pred$prediction,elnet.pred$actual)
-pr.df6 <- evaluate_model("Random Forest",rf.thresh.pr$.threshold,rf.pred$prediction,rf.pred$actual)
-pr.df7 <- evaluate_model("SVM Linear",svm.linear.thresh.pr$.threshold,svm.linear.pred$prediction,svm.linear.pred$actual)
-pr.df8 <- evaluate_model("SVM Radial",svm.radial.thresh.pr$.threshold,svm.radial.pred$prediction,svm.radial.pred$actual)
+pr.df1 <- evaluate_model("Logisitic",logistic.thresh.pr$.threshold,
+                data.holdout.results$logistic_prediction,
+                data.holdout.results$actual)
+pr.df1.hp <- evaluate_model("Logisitic - Hand Picked",
+                logistic.thresh.pr.hp$.threshold,
+                data.holdout.results$logistic_prediction,
+                data.holdout.results$actual)
+pr.df2 <- evaluate_model("LDA",
+                lda.thresh.pr$.threshold,
+                data.holdout.results$lda_prediction,
+                data.holdout.results$actual)
+pr.df3 <- evaluate_model("QDA",
+                qda.thresh.pr$.threshold,
+                data.holdout.results$qda_prediction,
+                data.holdout.results$actual)
+pr.df3.hp <- evaluate_model("QDA - Hand Picked",
+                qda.thresh.pr.hp$.threshold,
+                data.holdout.results$qda_prediction,
+                data.holdout.results$actual)
+pr.df4 <- evaluate_model("KNN",
+                knn.thresh.pr$.threshold,
+                data.holdout.results$knn_prediction,
+                data.holdout.results$actual)
+pr.df5 <- evaluate_model("Elastic Net",
+                elnet.thresh.pr$.threshold,
+                data.holdout.results$elnet_prediction,
+                data.holdout.results$actual)
+pr.df6 <- evaluate_model("Random Forest",
+                rf.thresh.pr$.threshold,
+                data.holdout.results$rf_prediction,
+                data.holdout.results$actual)
+pr.df7 <- evaluate_model("SVM Linear",
+                svm.linear.thresh.pr$.threshold,
+                data.holdout.results$svm_linear_prediction,
+                data.holdout.results$actual)
+pr.df8 <- evaluate_model("SVM Radial",
+                svm.radial.thresh.pr$.threshold,
+                data.holdout.results$svm_radial_prediction,
+                data.holdout.results$actual)
 
-holdout_results_pr <- rbind(pr.df1, pr.df1.hp, pr.df2, pr.df3, pr.df3.hp, pr.df4, pr.df5, pr.df6, pr.df7, pr.df8)
+holdout_results_pr <- rbind(pr.df1, pr.df1.hp, pr.df2, pr.df3, pr.df3.hp, pr.df4,
+                            pr.df5, pr.df6, pr.df7, pr.df8)
 holdout_results_pr
-holdout_results_pr <- holdout_results_pr %>% mutate(Tuning = "", AUROC = 0) %>% column_to_rownames(var = "Model")
+holdout_results_pr <- holdout_results_pr %>% mutate(Tuning = "", AUROC = 0) %>% 
+      column_to_rownames(var = "Model")
 
 
 # adding AUC
-model_types <- list("logistic","logistic","lda","qda","qda","knn","elnet","rf","svm.linear","svm.radial")
+model_types <- list("logistic","logistic","lda","qda","qda","knn",
+                    "elnet","rf","svm.linear","svm.radial")
 models <- row.names(holdout_results_pr)
 for(i in 1:length(models)){
   st <- paste0(model_types[i],".pr$.estimate", sep='')
@@ -1560,34 +1598,58 @@ holdout_results_pr["Random Forest",]$Tuning <- paste("Num Params: ",rf.tune.top$
 holdout_results_pr["SVM Linear",]$Tuning <- "Cost: 9"
 holdout_results_pr["SVM Radial",]$Tuning <- "Cost: 15, Gamma: 7"
 
-holdout_results_pr <- holdout_results_pr %>% dplyr::select(Tuning, AUROC, Threshold, Accuracy, TPR, FPR, Precision)
+holdout_results_pr <- holdout_results_pr %>% dplyr::select(Tuning, AUROC, 
+                                        Threshold, Accuracy, TPR, FPR, Precision)
 holdout_results_pr
 ```
 
+Results using the thresholds selected from ROC curves.
+
 ```{r, echo=FALSE, results="asis"}
 library(knitr)
-kable(cv_results)
+kable(holdout_results)
 ```
 
 Results using the thresholds calculated from the Precision Recall curves.
 
 ```{r, echo=FALSE, results="asis"}
 library(knitr)
-kable(cv_results_pr)
+kable(holdout_results_pr)
 ```
-
-
 
 # Final Conclusions
 
-### Conclusion \#1 
+### Conclusion \#1 - Model Selection
 
-### Conclusion \#2
+When selecting a model, my most important criteria are true positive rate, accuracy, and precision, generally in that order.  I will pick the more favorable between the hand picked and automated threshold selection, where applicable, and will consider the ROC curve and PR curve results together when making a determination.  While in the end, we have to select one threshold, seeing strong performance in both tables with both thresholds gives me an impression of robustness, less likely explained by over training.
 
-### Conclusion \#3
+From the training results, there are a lot of promising models.  Logistic regression and LDA perform very well in both the ROC and PR thresholds.  Precision is low across all models, which is to be expected as it was not prioritized. Logistic and LDA have some of the highest precision values in both tables. QDA also performs well with a handpicked threshold in the PR table, but less well in the ROC table.  A notable observation about QDA, it has one of the top precision in the PR table. Overall, Logistic regression has the top numbers, using a hand picked threshold, and this is the model I would select based on training data, specifically using the handpicked threshold in the PR data.
 
-### Conclusion \#4 
+From the holdout data, accuracy takes a considerable hit for most models, though TPR is very strong, almost across the board. Precision levels are devastated compared to the training data. From both tables, Logistic, LDA and QDA are clear front runners, with QDA lagging considerably in the ROC table, but ahead of all models in the PR table.  In this case, I would select QDA, using the handpicked threshold from the PR table, primarily due to the much larger precision value.
 
-### Conclusion \#5
+### Conclusion \#2 - Justifying findings and the selected models
 
-### Conclusion \#6
+Finding QDA as the highest performing model, while it was not selected based on training data is somewhat unexpected but not entirely surprising. QDA, while not linear, is very similar to the top two models from the training data, in comparison with the other models. QDA also was a standout performer, though not a top performer in the training data.
+
+Probably the best explanation, however, is the particular threshold picked for QDA.  The thresholds I picked from the training data were very aggressive, classifying as many observations as Blue Tarps as possible, leading to very minimal TPR's. For QDA, however, the hand picked threshold was placed toward the middle of a very healthy PR curve.  Selecting a point in the middle of the curve may have given the model a bit of an edge when dealing with new data that may have a different make up.  More research would need to be done to determine a concrete cause, however.  QDA's performance on the training data was good enough, that it could have just lucked out with the holdout data.
+
+### Conclusion \#3 - Relying on this Model and Threshold
+
+For this model we selected a threshold assuming unlimited resources. In reality, there will be some constraints on rescue resources. It is important when setting objectives to determine what a reasonable true positive, false positive, and precision rate would look like. In our models we had precision levels around 18%.  Is it reasonable to send a helicopter to check five potential sites and find only one with an actual blue tarp? On the other hand, do we have the ability to search all day just to find one blue tarp we would have missed without the algorithm.
+
+I do not recommend allocating all resources based on a data model. Ideally a fraction (even if a substantial fraction) of search resources will go to areas predicted by this model and the rest will go toward areas identified by more traditional means of information gathering, such as word of mouth and following leads.  This would perhaps allow us to set a higher precision target and use resources more efficiently. However, it is clear that precision was vastly over estimated using the training data, so targeting a specific precision rate will be very risky.
+
+
+### Conclusion \#4 - Precision Recall Data
+
+The precision recall plots yield very interesting data.  The graphs are often weaker than the ROC curves, making it easier to see the trade-offs between TPR and the alternative. Interestingly, selecting the highest TPR (recall or sensitivity), and then the highest precision or specificity led to the same threshold in most cases.  The main advantage then of using the precision recall curve (PR curve), verses the ROC curve is the ability to visually see a better middle point and hand pick an optimal threshold.  In training and test, the hand picked thresholds performed best.  Having high marks in both, did appear to indicate that the model would be strong in the holdout data.
+
+### Conclusion \#5 - Small Thresholds
+
+I found it astonishing how low the thresholds I selected were.  In a training dataset where only 3% of data were our target class, the thresholds I selected gave us Blue Tarp when there was only a 9% or 2% chance of the observation being a Blue Tarp.  These predictions also ended up being more accurate than the thresholds that were not handpicked, which were often in the 0.006% range.  I find it facinating that a lopsided data set can give such lopsided thresholds, but this may help explain the sheer drop off in precision when running those thresholds on the holdout data.
+
+### Conclusion \#6 - General Shape of Data
+
+Due to the success of Logistic, LDA, and QDA, and the weak performance of Random Forest, SVM and the others, it seems clear that the underlying relationships are probably linear, or at least mildly quadratic. However, KNN, Elastic Net, Random Forest, and SVM all underperformed and all have tuning parameters.  Random Forest and SVM specifically do have a lot of rum for tuning that was explored only to a very limited degree.  It could be that there is a high performing Random Forest model with just the right conditions.  
+
+On further examination, Random Forest found it's best tune with only two parameters, indicating a simpler (or linear) model might be preferred. On the other hand SVM Radial was vastly superior to SVM Linear, which undercuts the linear data argument.

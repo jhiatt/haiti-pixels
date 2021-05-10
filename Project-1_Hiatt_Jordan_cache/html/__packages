@@ -12,6 +12,8 @@ broom
 lattice
 caret
 MASS
+e1071
+yardstick
 tidymodels
 scales
 dials
@@ -22,8 +24,6 @@ recipes
 rsample
 tune
 workflows
-yardstick
 Matrix
 glmnet
-e1071
 knitr
